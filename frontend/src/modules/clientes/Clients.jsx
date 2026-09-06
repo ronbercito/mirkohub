@@ -727,6 +727,8 @@ export default function Clients({ onSelectClient }) {
           napBoxes={napBoxes}
           onClose={() => { setShowAddModal(false); setSelectedClient(null); }}
           onSubmit={handleSaveClient}
+          api={API}
+          token={token}
         />
       )}
     </div>

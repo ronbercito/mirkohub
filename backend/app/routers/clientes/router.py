@@ -80,9 +80,10 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
         if c.nap_port is not None and not 1 <= c.nap_port <= nap_box.ports:
             raise HTTPException(status_code=422, detail=f"El puerto NAP debe estar entre 1 y {nap_box.ports}.")
         if c.nap_port is not None:
-            occupied = await db.scalar(
-                select(Client.id).where(Client.nap_box_id == nap_box.id, Client.nap_port == c.nap_port, Client.id != c.id)
-            )
+            occupied_query = select(Client.id).where(Client.nap_box_id == nap_box.id, Client.nap_port == c.nap_port)
+            if c.id:
+                occupied_query = occupied_query.where(Client.id != c.id)
+            occupied = await db.scalar(occupied_query)
             if occupied:
                 raise HTTPException(status_code=422, detail=f"El puerto {c.nap_port} de {nap_box.name} ya está ocupado.")
         c.nap_box = nap_box.name

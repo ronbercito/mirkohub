@@ -1,23 +1,19 @@
 """
 Archivo: backend/app/routers/red/olt_onu_v2.py
-Pertenece a: Red > OLT > pestaña "ONUs" (versión 2 recreada desde cero).
-Función: Construye el inventario de ONUs del PON seleccionado usando únicamente
-         comandos confirmados en la CLI VSOL: `show onu state`, `show onu info`
-         y `show pon rx_power`.
-Regla: Este archivo es independiente. NO reutiliza parse_table() ni el inventario
-       antiguo. `show onu state` manda sobre el ONU ID. Si no se reconoce un ID real,
-       no se inventan valores como 101/111/121. No modificar otras pestañas desde aquí.
+Pertenece a: Red > OLT > pestaña "ONUs" recreada desde cero.
+Función: Lee inventario/estado/autorización/óptica de ONUs del PON seleccionado.
+Regla: Este archivo es INDEPENDIENTE. No usa parse_table() ni el inventario antiguo.
+       El ONU ID siempre sale de `show onu state`; nunca se fabrican IDs como 101/111/121.
 
-Compatibilidad de índices observados/documentados:
-    1/1/1:1
-    0/1:1
-    GPON0/1:1
-    0/1/1
-    1/1/1/1
-    1                 (cuando ya estamos dentro de interface gpon 0/1)
+Formato REAL observado en esta VSOL V1600G1-B:
+    GPON0/1:112Cenable27Cenable41Cworking56CMSTC8cb4fdc9
 
-Además, si el firmware no entrega una tabla utilizable dentro de la interfaz PON,
-se prueban de forma ligera variantes globales de `show onu state` en la MISMA sesión.
+Los textos 12C/27C/41C/56C son restos de secuencias ANSI de posicionamiento de cursor
+que el cliente Telnet actual dejó en la salida. En esa fila significan:
+    GPON0/1:1 | enable | enable | working | MSTC8cb4fdc9
+
+Este módulo corrige SOLO esa salida para ONUs, sin tocar el limpiador CLI general ni
+las pestañas Resumen, Puertos PON, Auto-find, Óptica ONU o Consola.
 """
 
 import re
@@ -32,7 +28,6 @@ from app.core.utils import get_or_404
 from app.integrations.olt import service as olt_service
 from app.models.router import Router
 
-
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 _BAD_RE = re.compile(
@@ -41,21 +36,10 @@ _BAD_RE = re.compile(
     re.IGNORECASE,
 )
 
-_ONLINE_RE = re.compile(
-    r"\b(?:working|online|registered|active|operation|syncmib|syncmib-fail|up)\b",
-    re.IGNORECASE,
-)
-_OFFLINE_RE = re.compile(
-    r"\b(?:offline|los|down|inactive|deregistered|dying[-\s]?gasp)\b",
-    re.IGNORECASE,
-)
-_STATE_RE = re.compile(
-    r"\b(?:working|online|registered|active|operation|syncmib|syncmib-fail|up|"
-    r"offline|los|down|inactive|deregistered|dying[-\s]?gasp|processing|ranging)\b",
-    re.IGNORECASE,
-)
-_MODE_RE = re.compile(r"^(?:sn|loid|mac|password|sn-password)$", re.IGNORECASE)
-_DBM_RE = re.compile(r"^(-?\d+(?:\.\d+)?)\s*(?:dbm)?$", re.IGNORECASE)
+_ONLINE_RE = re.compile(r"\b(?:working|online|registered|active|operation|syncmib|up)\b", re.I)
+_OFFLINE_RE = re.compile(r"\b(?:offline|los|down|inactive|deregistered|dying[-\s]?gasp)\b", re.I)
+_MODE_RE = re.compile(r"^(?:sn|loid|mac|password|sn-password)$", re.I)
+_DBM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 
 def _valid(raw: str) -> bool:
@@ -63,220 +47,163 @@ def _valid(raw: str) -> bool:
 
 
 def _clean_line(line: str) -> str:
-    """Normaliza una línea sin destruir separadores útiles del índice ONU."""
     value = (line or "").replace("\r", "").replace("\x00", "").strip()
-
-    # Algunos firmwares dejan el prompt delante del eco o de la primera línea.
     value = re.sub(
         r"^(?:gpon-olt|epon-olt|v1600[^\s#>]*)[^#>]*[#>]\s*",
         "",
         value,
-        flags=re.IGNORECASE,
+        flags=re.I,
     )
     return value.strip()
 
 
-def _extract_path_id(line: str, selected_pon: int) -> Optional[int]:
-    """Busca un índice con PON+ONU en cualquier parte de la línea."""
-    text = _clean_line(line)
-    pon = int(selected_pon)
-
-    # GPON0/1:7, 0/1:7, GPON0/1/7, 0/1/7
-    for match in re.finditer(
-        r"(?:(?:GPON|EPON)\s*)?0\s*/\s*(?P<pon>\d+)\s*[:/]\s*(?P<onu>\d+)",
-        text,
-        re.IGNORECASE,
-    ):
-        if int(match.group("pon")) == pon:
-            onu = int(match.group("onu"))
-            if 1 <= onu <= 128:
-                return onu
-
-    # 1/1/1:7, 1/1/8:26, y variantes con / en vez de : al final.
-    for match in re.finditer(
-        r"(?P<path>(?:\d+\s*/\s*){2,4}\d+)(?:\s*[:/]\s*)(?P<onu>\d+)",
-        text,
-        re.IGNORECASE,
-    ):
-        path_numbers = [int(x) for x in re.findall(r"\d+", match.group("path"))]
-        if not path_numbers:
-            continue
-        # En VSOL el número inmediatamente anterior al ONU suele ser el PON.
-        if path_numbers[-1] != pon:
-            continue
-        onu = int(match.group("onu"))
-        if 1 <= onu <= 128:
-            return onu
-
-    # Variante 1/1/1/7: los dos últimos números son PON/ONU.
-    for match in re.finditer(r"(?:\d+\s*/\s*){3,5}\d+", text):
-        nums = [int(x) for x in re.findall(r"\d+", match.group(0))]
-        if len(nums) >= 2 and nums[-2] == pon and 1 <= nums[-1] <= 128:
-            return nums[-1]
-
-    return None
-
-
-def _extract_local_id(line: str) -> Optional[int]:
-    """
-    Extrae el ID local cuando ya estamos dentro del PON.
-    Solo se acepta en una línea que también parezca una fila de estado/información.
-    """
+def _path_prefix(line: str, pon: int) -> Optional[tuple[int, str]]:
+    """Extrae ONU ID y resto de una fila con índice GPON0/PON:ONU."""
     text = _clean_line(line)
 
-    # ONU 7 / ONU-ID 7 / OnuIndex 7 (si aparece en una fila de datos).
-    m = re.match(r"^\s*(?:onu(?:[-_ ]?(?:id|index))?\s*[:#-]?\s*)?(\d{1,3})\b", text, re.I)
+    # Caso limpio con separador visible después del ID.
+    m = re.match(
+        rf"^(?:GPON|EPON)0/{int(pon)}:(\d{{1,3}})(?:\s+|\||,)(.*)$",
+        text,
+        re.I,
+    )
     if m:
-        onu = int(m.group(1))
-        if 1 <= onu <= 128:
-            return onu
+        onu_id = int(m.group(1))
+        if 1 <= onu_id <= 128:
+            return onu_id, m.group(2).strip()
 
-    # 1/7 dentro del PON: se toma el último número como ONU local.
-    m = re.match(r"^\s*\d+\s*/\s*(\d{1,3})\b", text)
+    # Formato REAL visto en esta OLT. El primer salto de cursor es 12C.
+    # Ejemplo: GPON0/1:112Cenable...  => ONU 1 + 12C.
+    marker = re.match(
+        rf"^(?:GPON|EPON)0/{int(pon)}:(\d{{1,3}})12C(.*)$",
+        text,
+        re.I,
+    )
+    if marker:
+        onu_id = int(marker.group(1))
+        if 1 <= onu_id <= 128:
+            return onu_id, "12C" + marker.group(2)
+
+    # Variantes chassis/slot/PON:ONU.
+    m = re.match(rf"^(?:\d+/)+{int(pon)}:(\d{{1,3}})(?:\s+|\||,)(.*)$", text, re.I)
     if m:
-        onu = int(m.group(1))
-        if 1 <= onu <= 128:
-            return onu
+        onu_id = int(m.group(1))
+        if 1 <= onu_id <= 128:
+            return onu_id, m.group(2).strip()
+
+    # Dentro de interface gpon 0/X algunos firmwares usan solo ONU ID como primera columna.
+    m = re.match(r"^(\d{1,3})\s+(.+)$", text)
+    if m:
+        onu_id = int(m.group(1))
+        if 1 <= onu_id <= 128:
+            return onu_id, m.group(2).strip()
 
     return None
 
 
-def _extract_onu_id(line: str, pon: int, *, allow_local: bool = False) -> Optional[int]:
-    onu = _extract_path_id(line, pon)
-    if onu:
-        return onu
-    if allow_local:
-        return _extract_local_id(line)
-    return None
+def _cursor_fields(rest: str) -> list[str]:
+    """
+    Convierte restos como `12Cenable27Cenable41Cworking56CSERIAL` en campos.
+    No interpreta números normales del contenido; solo marcadores NNC delante de columnas.
+    """
+    value = (rest or "").strip()
+    if not value:
+        return []
+
+    # El primer 12C pertenece al inicio de la primera columna y se elimina.
+    value = re.sub(r"^12C", "", value, count=1, flags=re.I)
+
+    if re.search(r"\d{1,3}C", value):
+        parts = [part.strip() for part in re.split(r"\d{1,3}C", value) if part.strip()]
+        if parts:
+            return parts
+
+    # Tabla normal con espacios.
+    return [part for part in re.split(r"\s{2,}|\|", value) if part.strip()]
 
 
-def _state_status(line: str) -> str:
-    low = _clean_line(line).lower()
-    if _OFFLINE_RE.search(low):
+def _status_from(*values: str) -> str:
+    text = " ".join(str(v or "") for v in values)
+    if _OFFLINE_RE.search(text):
         return "offline"
-    if _ONLINE_RE.search(low):
+    if _ONLINE_RE.search(text):
         return "online"
     return "unknown"
 
 
 def _parse_state(raw: str, pon: int) -> dict[int, dict]:
-    """
-    Parsea `show onu state` sin depender de anchos fijos.
-
-    Admite dos familias de salida habituales:
-      1/1/1:1 enable enable working succeeded 1(GPON)
-      0/1:1 GPONxxxxxxxx working
-      1 enable enable working succeeded
-    """
+    """Parsea `show onu state`; es la fuente autoritativa de ONU ID y estado."""
     result: dict[int, dict] = {}
 
     for original in (raw or "").splitlines():
-        line = _clean_line(original)
-        if not line or set(line) <= {"-", "=", "+", "|"}:
+        found = _path_prefix(original, pon)
+        if not found:
             continue
 
-        low = line.lower()
-        if any(h in low for h in ("onuindex", "onu-id", "admin state", "phase state", "total num")):
-            continue
+        onu_id, rest = found
+        fields = _cursor_fields(rest)
+        if len(fields) < 3:
+            # Fallback por palabras si la tabla vino con espacios simples.
+            tokens = rest.split()
+            if len(tokens) < 3:
+                continue
+            fields = tokens
 
-        # Una fila de estado debe contener un estado reconocible o varios campos.
-        if not _STATE_RE.search(line) and len(line.split()) < 3:
-            continue
-
-        onu_id = _extract_onu_id(line, pon, allow_local=True)
-        if not onu_id:
-            continue
-
-        status = _state_status(line)
-        tokens = line.replace("|", " ").split()
-
-        # Eliminar de forma conservadora el fragmento de índice para leer estados.
-        rest = tokens[:]
-        for i, token in enumerate(tokens):
-            if _extract_onu_id(token, pon, allow_local=True) == onu_id:
-                rest = tokens[i + 1:]
-                break
-
-        # Layout largo: enable enable working succeeded 1(GPON)
-        state_words = [x for x in rest if re.fullmatch(r"enable|disable", x, re.I)]
-        phase_match = next((x for x in rest if _STATE_RE.fullmatch(x)), "")
-        config_match = next(
-            (x for x in rest if re.fullmatch(r"succeeded|failed|success|configuring|initial", x, re.I)),
-            "",
-        )
-        channel_match = next((x for x in rest if re.search(r"GPON|EPON", x, re.I)), "")
-
-        # Layout corto global: 0/1:1 GPONxxxx working
-        sn_candidate = ""
-        if rest:
-            for token in rest:
-                if _STATE_RE.fullmatch(token) or re.fullmatch(r"enable|disable", token, re.I):
-                    continue
-                if re.search(r"GPON|EPON", token, re.I) and re.search(r"\d", token):
-                    sn_candidate = token
-                    break
+        admin = fields[0] if len(fields) > 0 else ""
+        omcc = fields[1] if len(fields) > 1 else ""
+        phase = fields[2] if len(fields) > 2 else ""
+        serial = fields[3] if len(fields) > 3 else ""
 
         result[onu_id] = {
             "pon_id": int(pon),
             "onu_id": onu_id,
-            "system_state": state_words[0] if state_words else "",
-            "omcc_state": state_words[1] if len(state_words) > 1 else "",
-            "phase_state": phase_match or ("working" if status == "online" else "offline" if status == "offline" else ""),
-            "config_state": config_match,
-            "channel": channel_match,
-            "state_sn": sn_candidate,
-            "status": status,
+            "system_state": admin,
+            "omcc_state": omcc,
+            "phase_state": phase,
+            "status": _status_from(phase, admin, omcc),
+            # show onu state de esta VSOL ya entrega Serial Number en la última columna.
+            "serial": serial,
+            "auth_info": serial,
         }
 
     return result
 
 
 def _parse_info(raw: str, pon: int, allowed_ids: set[int]) -> dict[int, dict]:
-    """Complementa autorización/modelo sin modificar los ONU ID confirmados por state."""
+    """Complementa Description/Model/Profile/Mode/AuthInfo sin alterar ONU ID."""
     result: dict[int, dict] = {}
 
     for original in (raw or "").splitlines():
-        line = _clean_line(original)
-        if not line or set(line) <= {"-", "=", "+", "|"}:
+        found = _path_prefix(original, pon)
+        if not found:
+            continue
+        onu_id, rest = found
+        if onu_id not in allowed_ids:
             continue
 
-        onu_id = _extract_onu_id(line, pon, allow_local=True)
-        if not onu_id or onu_id not in allowed_ids:
+        fields = _cursor_fields(rest)
+        if not fields:
             continue
 
-        tokens = line.replace("|", " ").split()
-        # Quitar el índice encontrado al inicio/cerca del inicio.
-        consumed_at = None
-        for i, token in enumerate(tokens):
-            if _extract_onu_id(token, pon, allow_local=True) == onu_id:
-                consumed_at = i
-                break
-        rest = tokens[(consumed_at + 1) if consumed_at is not None else 1:]
-        if not rest:
-            continue
+        description = model = profile = mode = auth_info = info_status = ""
 
-        mode_index = next((i for i, token in enumerate(rest) if _MODE_RE.fullmatch(token)), None)
-        model = profile = mode = auth_info = description = info_status = ""
-
-        if mode_index is not None:
-            mode = rest[mode_index]
-            auth_info = rest[mode_index + 1] if mode_index + 1 < len(rest) else ""
-            profile = rest[mode_index - 1] if mode_index >= 1 else ""
-            model = rest[mode_index - 2] if mode_index >= 2 else ""
-            prefix = rest[:max(0, mode_index - 2)]
+        # Forma típica VSOL: Status | Description | Model | Profile | Mode | Info
+        if len(fields) >= 6:
+            info_status, description, model, profile, mode, auth_info = fields[:6]
+        elif len(fields) == 5:
+            description, model, profile, mode, auth_info = fields
+        elif len(fields) == 4:
+            model, profile, mode, auth_info = fields
         else:
-            prefix = []
-            # No forzar campos si la estructura no es reconocible.
-            if len(rest) >= 4:
-                model, profile, mode, auth_info = rest[-4:]
-                prefix = rest[:-4]
-
-        if prefix:
-            if _STATE_RE.fullmatch(prefix[0]):
-                info_status = prefix[0]
-                description = " ".join(prefix[1:])
-            else:
-                description = " ".join(prefix)
+            # Si no hay columnas de cursor, intenta ubicar Mode desde la derecha.
+            tokens = rest.split()
+            mode_idx = next((i for i, token in enumerate(tokens) if _MODE_RE.match(token)), None)
+            if mode_idx is not None:
+                mode = tokens[mode_idx]
+                auth_info = tokens[mode_idx + 1] if mode_idx + 1 < len(tokens) else ""
+                profile = tokens[mode_idx - 1] if mode_idx >= 1 else ""
+                model = tokens[mode_idx - 2] if mode_idx >= 2 else ""
+                description = " ".join(tokens[:max(0, mode_idx - 2)])
 
         result[onu_id] = {
             "description": description,
@@ -291,81 +218,44 @@ def _parse_info(raw: str, pon: int, allowed_ids: set[int]) -> dict[int, dict]:
 
 
 def _parse_optical(raw: str, pon: int, allowed_ids: set[int]) -> dict[int, dict]:
-    """Extrae RX/TX solo para IDs previamente confirmados por `show onu state`."""
+    """Extrae potencia de filas pertenecientes a ONU ID confirmados por show onu state."""
     result: dict[int, dict] = {}
 
     for original in (raw or "").splitlines():
-        line = _clean_line(original)
-        if not line:
+        found = _path_prefix(original, pon)
+        if not found:
+            continue
+        onu_id, rest = found
+        if onu_id not in allowed_ids:
             continue
 
-        onu_id = _extract_onu_id(line, pon, allow_local=True)
-        if not onu_id or onu_id not in allowed_ids:
-            continue
-
-        numbers = []
-        for token in line.replace("|", " ").split():
-            clean = token.strip().rstrip(",;")
-            m = _DBM_RE.fullmatch(clean)
-            if not m:
-                continue
+        # Quita marcadores de cursor antes de extraer números.
+        clean = re.sub(r"\d{1,3}C", " ", rest)
+        values = []
+        for match in _DBM_RE.finditer(clean):
             try:
-                value = float(m.group(1))
+                number = float(match.group(0))
             except ValueError:
                 continue
-            if -50.0 <= value <= 20.0:
-                numbers.append(value)
+            if -50.0 <= number <= 20.0:
+                values.append(number)
 
-        if numbers:
+        if values:
             result[onu_id] = {
-                "rx_power": f"{numbers[0]:g} dBm",
-                "tx_power": f"{numbers[1]:g} dBm" if len(numbers) > 1 else "",
+                "rx_power": f"{values[0]:g} dBm",
+                "tx_power": f"{values[1]:g} dBm" if len(values) > 1 else "",
             }
 
     return result
 
 
-async def _read_state(cli, pon: int):
-    """
-    Lee estado con pocas consultas y devuelve (raw, parsed, source, attempts).
-    Primero usa el comando confirmado dentro del PON; solo si no se reconoce ninguna
-    fila prueba variantes globales documentadas para otros firmwares VSOL.
-    """
-    attempts = []
-
-    raw = await cli.run_pon(pon, "show onu state", raise_on_error=False)
-    attempts.append(("show onu state [PON]", raw))
-    parsed = _parse_state(raw, pon) if _valid(raw) else {}
-    if parsed:
-        return raw, parsed, "show onu state [PON]", attempts
-
-    # Volver de interface gpon al modo config, sin cerrar la sesión Telnet.
-    try:
-        await cli.run("exit", raise_on_error=False)
-    except Exception:
-        pass
-
-    candidates = [
-        f"show onu state gpon-olt 0/{pon}",
-        f"show onu state 0/{pon}",
-        "show onu state",
-    ]
-
-    for command in candidates:
-        candidate_raw = await cli.run(command, raise_on_error=False)
-        attempts.append((command, candidate_raw))
-        if not _valid(candidate_raw):
-            continue
-        parsed = _parse_state(candidate_raw, pon)
-        if parsed:
-            return candidate_raw, parsed, command, attempts
-
-    # Unir intentos para que Salida cruda muestre exactamente qué recibió la OLT.
-    diagnostic = "\n\n".join(
-        f"===== {command} =====\n{body or '(sin salida)'}"
-        for command, body in attempts
-    )
-    return diagnostic, {}, "unparsed", attempts
+def _counts(onus: list[dict]) -> dict:
+    return {
+        "total": len(onus),
+        "online": sum(1 for row in onus if row.get("status") == "online"),
+        "offline": sum(1 for row in onus if row.get("status") == "offline"),
+        "unknown": sum(1 for row in onus if row.get("status") == "unknown"),
+    }
 
 
 @router.get("/{router_id}/olt/onus-v2")
@@ -374,7 +264,7 @@ async def onus_v2(
     pon: int = 1,
     db: AsyncSession = Depends(get_db),
 ):
-    """Inventario ONU v2: IDs reales, sin parser genérico antiguo."""
+    """Inventario ONU v2 aislado, usando la salida real observada de la VSOL."""
     olt = await get_or_404(db, Router, router_id, "Router")
     if olt.device_type != "olt":
         raise HTTPException(status_code=400, detail="Este equipo no es una OLT")
@@ -383,27 +273,29 @@ async def onus_v2(
     pon = max(1, min(int(pon or 1), max_pon))
 
     state_raw = info_raw = optical_raw = ""
-    state_source = ""
-    commands = []
+    commands: list[str] = []
 
     try:
         async with olt_service.connect(olt) as cli:
-            state_raw, state, state_source, attempts = await _read_state(cli, pon)
-            commands.extend(command for command, _ in attempts)
+            # 1) Primero estado: de aquí salen los ONU ID reales.
+            state_raw = await cli.run_pon(pon, "show onu state", raise_on_error=False)
+            commands.append("show onu state")
+            state = _parse_state(state_raw, pon) if _valid(state_raw) else {}
 
             if not state:
                 return {
                     "ok": False,
-                    "error": "La OLT respondió, pero todavía no se reconoció el formato de `show onu state`. Activa Salida cruda: ahora mostrará todos los intentos reales del CLI.",
+                    "error": "La OLT respondió, pero no se pudieron separar las columnas de `show onu state`.",
                     "pon": pon,
                     "onus": [],
                     "counts": {"total": 0, "online": 0, "offline": 0, "unknown": 0},
                     "commands": commands,
-                    "state_source": state_source,
                     "raw": {"state": state_raw, "info": "", "optical": ""},
                 }
 
-            # Ya tenemos IDs reales. Reentrar al PON y complementar los datos.
+            allowed_ids = set(state)
+
+            # 2) Solo después de tener IDs reales se consultan los complementos.
             info_raw = await cli.run_pon(pon, "show onu info", raise_on_error=False)
             commands.append("show onu info")
 
@@ -418,43 +310,35 @@ async def onus_v2(
             "onus": [],
             "counts": {"total": 0, "online": 0, "offline": 0, "unknown": 0},
             "commands": commands,
-            "state_source": state_source,
             "raw": {"state": state_raw, "info": info_raw, "optical": optical_raw},
         }
 
-    allowed_ids = set(state)
     info = _parse_info(info_raw, pon, allowed_ids) if _valid(info_raw) else {}
     optical = _parse_optical(optical_raw, pon, allowed_ids) if _valid(optical_raw) else {}
 
     onus = []
     for onu_id in sorted(state):
         row = dict(state[onu_id])
-        row.update(info.get(onu_id, {}))
+
+        # No reemplazar el serial real obtenido de show onu state por un campo vacío.
+        extra = info.get(onu_id, {})
+        if extra:
+            for key, value in extra.items():
+                if value:
+                    row[key] = value
+
         row.update(optical.get(onu_id, {}))
-
-        # Si el state global devolvió un SN y `show onu info` no lo hizo, conservarlo.
-        if not row.get("auth_info") and row.get("state_sn"):
-            row["auth_info"] = row["state_sn"]
-
         onus.append(row)
-
-    counts = {
-        "total": len(onus),
-        "online": sum(1 for row in onus if row.get("status") == "online"),
-        "offline": sum(1 for row in onus if row.get("status") == "offline"),
-        "unknown": sum(1 for row in onus if row.get("status") == "unknown"),
-    }
 
     return {
         "ok": True,
         "error": "",
         "pon": pon,
         "onus": onus,
-        "counts": counts,
+        "counts": _counts(onus),
         "commands": commands,
-        "state_source": state_source,
         "sources": {
-            "identity_and_state": state_source,
+            "identity_and_state": "show onu state",
             "authorization": "show onu info" if info else None,
             "optical": "show pon rx_power" if optical else None,
         },

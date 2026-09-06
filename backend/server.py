@@ -10,8 +10,8 @@ Trabaja con: backend/app/core/config.py, database.py, seed.py,
 Regla de rutas OLT:
 - Las rutas específicas de submódulos OLT deben montarse ANTES del router genérico
   de Red, porque Red contiene /routers/{router_id}/olt/{action}. FastAPI resuelve
-  rutas por orden; si el genérico va primero, una ruta como /olt/onu-summary o
-  /olt/onu-inventory queda capturada como action y nunca llega a su archivo independiente.
+  rutas por orden; si el genérico va primero, una ruta como /olt/onus-v2 queda
+  capturada como action y nunca llega a su archivo independiente.
 """
 from app.core.config import CORS_ORIGINS  # carga .env primero
 
@@ -36,6 +36,7 @@ from app.routers.planes.router import router as planes_router
 from app.routers.red.router import router as red_router
 from app.routers.red.olt_onu_summary import router as olt_onu_summary_router
 from app.routers.red.olt_onu_inventory import router as olt_onu_inventory_router
+from app.routers.red.olt_onu_v2 import router as olt_onu_v2_router
 from app.routers.tareas.router import router as tareas_router
 from app.routers.tickets.router import router as tickets_router
 
@@ -63,6 +64,7 @@ app.add_middleware(
 api = APIRouter(prefix="/api")
 
 # IMPORTANTE: estas rutas específicas deben ir antes de red_router.
+api.include_router(olt_onu_v2_router, prefix="/routers", tags=["Red / OLT / ONUs v2"])
 api.include_router(olt_onu_summary_router, prefix="/routers", tags=["Red / OLT / ONUs"])
 api.include_router(olt_onu_inventory_router, prefix="/routers", tags=["Red / OLT / ONUs"])
 

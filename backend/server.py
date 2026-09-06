@@ -28,6 +28,7 @@ from app.routers.inicio.router import router as inicio_router
 from app.routers.mensajeria.router import router as mensajeria_router
 from app.routers.planes.router import router as planes_router
 from app.routers.red.router import router as red_router
+from app.routers.red.olt_onu_summary import router as olt_onu_summary_router
 from app.routers.tareas.router import router as tareas_router
 from app.routers.tickets.router import router as tickets_router
 
@@ -56,6 +57,10 @@ api = APIRouter(prefix="/api")
 for r in (auth_router, inicio_router, clientes_router, planes_router, red_router, facturacion_router,
           tickets_router, almacen_router, hotspot_router, tareas_router, mensajeria_router, ajustes_router):
     api.include_router(r)
+
+# Endpoint aislado de la pestaña ONUs. Se monta fuera de red/router.py para evitar
+# mezclar la lógica de contadores con las rutas ya estables del resto del módulo Red.
+api.include_router(olt_onu_summary_router, prefix="/routers", tags=["Red / OLT / ONUs"])
 
 
 @api.get("/health")

@@ -7,6 +7,8 @@
  *              Hotspot, Tasks, Inventory, Tickets, Messaging, Settings)
  */
 import React, { useEffect, useState } from "react";
+import axios from "axios";
+import { useAuth } from "../../context/AuthContext";
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
 import Dashboard from "../../modules/inicio/Dashboard";
@@ -26,11 +28,39 @@ import Messaging from "../../modules/mensajeria/Messaging";
 import Settings from "../../modules/ajustes/Settings";
 
 export default function Layout() {
+  const { API, token } = useAuth();
+  const [companyName, setCompanyName] = useState(() => localStorage.getItem("fibraz_company_name") || "FibraZ");
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem("fibraz_active_tab") || "inicio");
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("fibraz_sidebar_open") !== "false");
 
   useEffect(() => { localStorage.setItem("fibraz_active_tab", activeTab); }, [activeTab]);
   useEffect(() => { localStorage.setItem("fibraz_sidebar_open", String(sidebarOpen)); }, [sidebarOpen]);
+
+  useEffect(() => {
+    const loadCompanyName = async () => {
+      try {
+        const response = await axios.get(`${API}/settings`, { headers: { Authorization: `Bearer ${token}` } });
+        const name = response.data.company_name?.trim() || "FibraZ";
+        setCompanyName(name);
+        localStorage.setItem("fibraz_company_name", name);
+      } catch (_) {
+        // Se conserva el último nombre conocido si el backend no está disponible.
+      }
+    };
+    loadCompanyName();
+  }, [API, token]);
+
+  useEffect(() => {
+    const syncName = (event) => {
+      const name = event.detail?.companyName?.trim() || "FibraZ";
+      setCompanyName(name);
+      localStorage.setItem("fibraz_company_name", name);
+    };
+    window.addEventListener("fibraz-company-name", syncName);
+    return () => window.removeEventListener("fibraz-company-name", syncName);
+  }, []);
+
+  useEffect(() => { document.title = `Panel · ${companyName}`; }, [companyName]);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -77,6 +107,7 @@ export default function Layout() {
         setActiveTab={setActiveTab}
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
+        companyName={companyName}
       />
       <div className={`flex-1 flex flex-col transition-all duration-300 ${
         sidebarOpen ? "ml-64" : "ml-20"

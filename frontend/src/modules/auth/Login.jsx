@@ -3,18 +3,28 @@
  * Función: Pantalla de inicio de sesión (correo + contraseña). Llama a login() del AuthContext y muestra errores del backend.
  * Trabaja con: context/AuthContext.js, backend/app/routers/auth/router.py, constants/testIds.js
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
 import { TEST_IDS } from "../../constants/testIds";
 import { Radio, Lock, Mail, Server, ShieldCheck, CheckCircle2, Wifi } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, API } = useAuth();
+  const [branding, setBranding] = useState({ company_name: "MikroHub", logo_data: "" });
   const [email, setEmail] = useState("admin@fibraz.pe");
   const [password, setPassword] = useState("admin123");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    axios.get(`${API}/settings/public`).then((response) => {
+      const name = response.data.company_name?.trim() || "MikroHub";
+      setBranding({ company_name: name, logo_data: response.data.logo_data || "" });
+      document.title = `Panel · ${name}`;
+    }).catch(() => { document.title = "Panel · MikroHub"; });
+  }, [API]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -46,14 +56,10 @@ export default function Login() {
       <div className="w-full max-w-md bg-slate-900/90 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-8 relative z-10">
         <div className="flex flex-col items-center text-center mb-8">
           <div className="flex items-center gap-3 mb-2">
-            <div className="h-12 w-12 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
-              <Wifi className="w-7 h-7 text-white" />
-            </div>
+            <div className="h-12 w-12 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center overflow-hidden shadow-lg shadow-cyan-500/30">{branding.logo_data ? <img src={branding.logo_data} alt="Logo de empresa" className="h-full w-full object-contain" /> : <Wifi className="w-7 h-7 text-white" />}</div>
             <div className="text-left">
-              <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-1">
-                Fibra<span className="text-cyan-400">Z</span>
-              </h1>
-              <p className="text-xs text-cyan-400/80 font-medium tracking-wide uppercase">ISP Telecom Perú</p>
+              <h1 className="text-2xl font-bold tracking-tight text-white">{branding.company_name}</h1>
+              <p className="text-xs text-cyan-400/80 font-medium tracking-wide uppercase">Panel ISP</p>
             </div>
           </div>
           <p className="text-sm text-slate-400 mt-2">

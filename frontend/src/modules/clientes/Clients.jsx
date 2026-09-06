@@ -19,11 +19,13 @@ export default function Clients({ onSelectClient }) {
   const [clients, setClients] = useState([]);
   const [plans, setPlans] = useState([]);
   const [routers, setRouters] = useState([]);
+  const [ipv4Networks, setIpv4Networks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const activePlans = plans.filter((plan) => plan.is_active);
   const mikrotikRouters = routers.filter((router) => router.device_type === "mikrotik");
+  const compatibleNetworks = ipv4Networks.filter((network) => network.router_id === formData.router_id);
   
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -42,6 +44,7 @@ export default function Clients({ onSelectClient }) {
     pppoe_password: "",
     plan_id: "",
     router_id: "",
+    ipv4_network_id: "",
     nap_box: "",
     optical_power_dbm: "",
     status: "active"
@@ -50,17 +53,19 @@ export default function Clients({ onSelectClient }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [resClients, resPlans, resRouters] = await Promise.all([
+      const [resClients, resPlans, resRouters, resNetworks] = await Promise.all([
         axios.get(`${API}/clients`, {
           params: { search, status: statusFilter },
           headers: { Authorization: `Bearer ${token}` }
         }),
         axios.get(`${API}/plans`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${API}/routers`, { headers: { Authorization: `Bearer ${token}` } })
+        axios.get(`${API}/routers`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API}/ipv4-networks`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
       setClients(resClients.data);
       setPlans(resPlans.data);
       setRouters(resRouters.data);
+      setIpv4Networks(resNetworks.data);
 
       const firstActivePlan = resPlans.data.find((plan) => plan.is_active);
       const firstMikrotik = resRouters.data.find((router) => router.device_type === "mikrotik");
@@ -180,6 +185,7 @@ export default function Clients({ onSelectClient }) {
                 pppoe_password: "",
                 plan_id: activePlans[0]?.id || "",
                 router_id: mikrotikRouters[0]?.id || "",
+                ipv4_network_id: "",
                 nap_box: "",
                 optical_power_dbm: "",
                 status: "active"
@@ -384,6 +390,7 @@ export default function Clients({ onSelectClient }) {
                               pppoe_password: c.pppoe_password || "",
                               plan_id: c.plan_id,
                               router_id: c.router_id,
+                              ipv4_network_id: c.ipv4_network_id || "",
                               nap_box: c.nap_box || "",
                               optical_power_dbm: c.optical_power_dbm ?? "",
                               status: c.status
@@ -516,7 +523,7 @@ export default function Clients({ onSelectClient }) {
                   <select
                     required
                     value={formData.router_id}
-                    onChange={(e) => setFormData({ ...formData, router_id: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, router_id: e.target.value, ipv4_network_id: "" })}
                     className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100"
                   >
                     <option value="" disabled>Selecciona un MikroTik</option>
@@ -526,6 +533,26 @@ export default function Clients({ onSelectClient }) {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Red IPv4 asignada</label>
+                  <select
+                    required={formData.connection_type !== "PPPoE" && Boolean(formData.ip_address)}
+                    value={formData.ipv4_network_id}
+                    onChange={(e) => setFormData({ ...formData, ipv4_network_id: e.target.value })}
+                    className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100"
+                  >
+                    <option value="">Sin red asignada</option>
+                    {compatibleNetworks.map((network) => (
+                      <option key={network.id} value={network.id}>
+                        {network.name} — {network.cidr}
+                      </option>
+                    ))}
+                  </select>
+                  {formData.router_id && compatibleNetworks.length === 0 && (
+                    <p className="text-[10px] text-amber-400 mt-1">No hay redes IPv4 registradas para este MikroTik.</p>
+                  )}
                 </div>
 
                 {/* Technical network config */}

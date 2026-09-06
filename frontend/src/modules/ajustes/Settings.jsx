@@ -63,7 +63,8 @@ export default function Settings() {
     plin_number: "",
     bcp_account: "",
     bbva_account: "",
-    mikrotik_cut_list: "morosos"
+    mikrotik_cut_list: "morosos",
+    google_maps_api_key: ""
   });
 
   useEffect(() => {
@@ -315,6 +316,20 @@ export default function Settings() {
             <Save className="w-4 h-4" />
             {saving ? "Guardando..." : "Guardar Cambios"}
           </button>
+        </div>
+      </form> : activeSection === "google" ? <form onSubmit={handleSubmit} className="max-w-4xl space-y-5 rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+        <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300"><BadgeInfo className="h-5 w-5" /></span>
+          <div><h3 className="font-bold text-slate-100">Google Maps</h3><p className="text-xs text-slate-500">Conecta el mapa de clientes a Google Maps Platform.</p></div>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-slate-300">Clave de Maps JavaScript API</label>
+          <input type="password" autoComplete="off" value={settings.google_maps_api_key || ""} onChange={(e) => setSettings({ ...settings, google_maps_api_key: e.target.value.trim() })} placeholder="AIza..." className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 font-mono text-sm text-slate-100" />
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-500">Activa “Maps JavaScript API” en Google Cloud y restringe la clave al dominio de este panel. Esta clave se usa únicamente para cargar el mapa desde la sesión autenticada.</p>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-800 pt-4">
+          <button type="button" onClick={() => setActiveSection("general")} className="rounded-xl bg-slate-800 px-4 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700">Cancelar</button>
+          <button type="submit" disabled={saving} className="flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 text-xs font-bold text-white hover:bg-cyan-400 disabled:opacity-50"><Save className="h-4 w-4" />{saving ? "Guardando…" : "Guardar clave"}</button>
         </div>
       </form> : <section className="max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
         {(() => {

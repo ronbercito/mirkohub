@@ -31,6 +31,7 @@ from app.routers.ajustes.router import router as ajustes_router
 from app.routers.almacen.router import router as almacen_router
 from app.routers.auth.router import router as auth_router
 from app.routers.clientes.router import router as clientes_router
+from app.routers.clientes.zones import router as zones_router
 from app.routers.facturacion.router import router as facturacion_router
 from app.routers.hotspot.router import router as hotspot_router
 from app.routers.inicio.router import router as inicio_router
@@ -39,6 +40,7 @@ from app.routers.planes.router import router as planes_router
 from app.routers.red.router import router as red_router
 from app.routers.red.ipv4_networks import router as ipv4_networks_router
 from app.routers.red.nap_boxes import router as nap_boxes_router
+from app.routers.red.monitoring import router as monitoring_router
 from app.routers.red.olt_onu_summary import router as olt_onu_summary_router
 from app.routers.red.olt_onu_inventory import router as olt_onu_inventory_router
 from app.routers.red.olt_onu_power import router as olt_onu_power_router
@@ -77,7 +79,7 @@ api.include_router(olt_onu_descriptions_router, prefix="/routers", tags=["Red / 
 api.include_router(olt_onu_summary_router, prefix="/routers", tags=["Red / OLT / ONUs"])
 api.include_router(olt_onu_inventory_router, prefix="/routers", tags=["Red / OLT / ONUs"])
 
-for r in (auth_router, inicio_router, clientes_router, planes_router, ipv4_networks_router, nap_boxes_router, red_router, facturacion_router,
+for r in (auth_router, inicio_router, clientes_router, zones_router, planes_router, ipv4_networks_router, nap_boxes_router, monitoring_router, red_router, facturacion_router,
           tickets_router, almacen_router, hotspot_router, tareas_router, mensajeria_router, ajustes_router):
     api.include_router(r)
 

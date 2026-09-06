@@ -30,7 +30,7 @@ export const OLT_EMPTY = {
   name: "", device_type: "olt", ip_address: "", private_ip: "", olt_model: "Vsol-V1600G-B", software_version: "1.x",
   pon_type: "GPON", pon_ports: 8, protocol: "telnet", ssh_port: 22, telnet_port: 23, snmp_port: 161,
   snmp_community: "public", snmp_community_rw: "private", username: "admin", password: "", enable_password: "",
-  model: "", location: "", port: 23, use_ssl: false, olt_profile: "vsol_gpon",
+  model: "", location: "", latitude: "", longitude: "", port: 23, use_ssl: false, olt_profile: "vsol_gpon",
 };
 
 const Row = ({ label, help, children }) => (
@@ -152,6 +152,12 @@ export default function OltForm({ initial, onClose, onSaved, onSwitchType }) {
           <Row label="Ubicación / Nodo">
             <input data-testid="olt-location-input" value={form.location} onChange={(e) => set("location", e.target.value)} placeholder="Nodo Central" className={input} />
           </Row>
+          <div className="grid grid-cols-1 sm:grid-cols-[190px_1fr_auto_1fr] gap-1 sm:gap-4 items-center">
+            <label className="text-xs text-slate-300 font-semibold">Latitud</label>
+            <input type="number" step="any" value={form.latitude ?? ""} onChange={(e) => set("latitude", e.target.value === "" ? "" : Number(e.target.value))} placeholder="-8.0679" className={`${input} font-mono`} />
+            <label className="text-xs text-slate-300 font-semibold">Longitud</label>
+            <input type="number" step="any" value={form.longitude ?? ""} onChange={(e) => set("longitude", e.target.value === "" ? "" : Number(e.target.value))} placeholder="-78.9859" className={`${input} font-mono`} />
+          </div>
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">

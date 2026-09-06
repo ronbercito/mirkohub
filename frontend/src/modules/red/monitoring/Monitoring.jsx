@@ -144,7 +144,7 @@ export default function Monitoring() {
           <form onSubmit={save} className="grid grid-cols-1 gap-4 text-xs md:grid-cols-2">
             {field("name", "Nombre del equipo *", "AP Cerro / Torre Norte")}
             {field("ip_address", "Dirección IP", "192.168.x.x")}
-            {field("manufacturer", "Fabricante", "MikroTik, Ubiquiti, Cambium…")}
+            <label className="block text-xs font-semibold text-slate-300"><span className="mb-1 block">Fabricante</span><select value={form.manufacturer} onChange={(event) => setForm({ ...form, manufacturer: event.target.value })} className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-slate-100"><option value="MikroTik">MikroTik</option><option value="Ubiquiti">Ubiquiti</option><option value="TP-Link">TP-Link</option><option value="Mimosa">Mimosa</option><option value="Otros">Otros</option></select></label>
             {field("equipment_type", "Tipo de equipo", "AP, estación base, router…")}
             {field("model_name", "Modelo / nombre", "RB1100AHx2, Rocket Prism…")}
             {field("location", "Ubicación", "Zona / torre")}

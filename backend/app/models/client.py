@@ -39,6 +39,7 @@ class Client(Base):
     plan_price: Mapped[float] = mapped_column(Float, default=0.0)
     router_id: Mapped[str] = mapped_column(String(36), default="")
     router_name: Mapped[str] = mapped_column(String(120), default="")
+    ipv4_network_id: Mapped[str] = mapped_column(String(36), default="", index=True)
     nap_box: Mapped[str] = mapped_column(String(80), default="")
     optical_power_dbm: Mapped[float | None] = mapped_column(Float, nullable=True)
 

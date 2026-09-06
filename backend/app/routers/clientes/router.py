@@ -38,10 +38,27 @@ async def _cut_list(db: AsyncSession) -> str:
 
 
 async def _attach_plan_router(db: AsyncSession, c: Client):
-    plan = await db.get(Plan, c.plan_id) if c.plan_id else None
-    rtr = await db.get(Router, c.router_id) if c.router_id else None
-    c.plan_name, c.plan_price = (plan.name, plan.price) if plan else ("", 0.0)
-    c.router_name = rtr.name if rtr else ""
+    """Valida el plan y el MikroTik antes de aprovisionar al abonado."""
+    if not c.plan_id:
+        raise HTTPException(status_code=422, detail="Selecciona un plan de internet activo.")
+    plan = await db.get(Plan, c.plan_id)
+    if not plan:
+        raise HTTPException(status_code=422, detail="El plan seleccionado ya no existe.")
+    if not plan.is_active:
+        raise HTTPException(status_code=422, detail="El plan seleccionado está inactivo.")
+
+    if not c.router_id:
+        raise HTTPException(status_code=422, detail="Selecciona el MikroTik donde se registrará el abonado.")
+    rtr = await db.get(Router, c.router_id)
+    if not rtr:
+        raise HTTPException(status_code=422, detail="El MikroTik seleccionado ya no existe.")
+    if rtr.device_type != "mikrotik":
+        raise HTTPException(status_code=422, detail="El equipo seleccionado no es un MikroTik.")
+    if not rtr.password:
+        raise HTTPException(status_code=422, detail="El MikroTik seleccionado no tiene credenciales API configuradas.")
+
+    c.plan_name, c.plan_price = plan.name, plan.price
+    c.router_name = rtr.name
     return plan, rtr
 
 
@@ -97,7 +114,12 @@ async def create_client(data: ClientIn, db: AsyncSession = Depends(get_db)):
     db.add(c)
     await db.flush()
 
-    if data.create_first_invoice and plan:
+    result = await mt.provision_client(c, rtr, plan)
+    if not result["ok"]:
+        await db.rollback()
+        raise HTTPException(status_code=502, detail=f"No se pudo registrar el abonado en MikroTik: {result['message']}")
+
+    if data.create_first_invoice:
         now = datetime.now(timezone.utc)
         db.add(Invoice(invoice_number=correlative("REC"), client_id=c.id, client_name=c.full_name,
                        client_dni_ruc=c.dni_ruc, client_address=c.address, client_phone=c.phone,
@@ -106,7 +128,6 @@ async def create_client(data: ClientIn, db: AsyncSession = Depends(get_db)):
                        status="unpaid", notes="Factura inicial de instalación / servicio mensual"))
         c.unpaid_invoices_count, c.balance_due = 1, c.plan_price
 
-    result = await mt.provision_client(c, rtr, plan)
     await db.commit()
     return {**c.to_dict(), "mikrotik": result}
 
@@ -117,6 +138,9 @@ async def update_client(client_id: str, data: ClientIn, db: AsyncSession = Depen
     apply_updates(c, data.model_dump(exclude={"create_first_invoice"}))
     plan, rtr = await _attach_plan_router(db, c)
     result = await mt.provision_client(c, rtr, plan)
+    if not result["ok"]:
+        await db.rollback()
+        raise HTTPException(status_code=502, detail=f"No se pudo actualizar el abonado en MikroTik: {result['message']}")
     await db.commit()
     return {**c.to_dict(), "mikrotik": result}
 

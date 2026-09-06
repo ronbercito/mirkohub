@@ -14,7 +14,7 @@ import Network from "../../modules/red/Network";
 import IPv4Networks from "../../modules/red/IPv4Networks";
 import NapBoxes from "../../modules/red/NapBoxes";
 import Plans from "../../modules/planes/Plans";
-import Clients from "../../modules/clientes/Clients";
+import Users from "../../modules/clientes/usuarios/Users";
 import Billing from "../../modules/facturacion/Billing";
 import Hotspot from "../../modules/hotspot/Hotspot";
 import Tasks from "../../modules/tareas/Tasks";
@@ -40,7 +40,8 @@ export default function Layout() {
       case "servicios":
         return <Plans />;
       case "clientes":
-        return <Clients />;
+      case "client_users":
+        return <Users />;
       case "facturacion":
         return <Billing />;
       case "hotspot":

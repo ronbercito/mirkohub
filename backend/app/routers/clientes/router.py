@@ -131,7 +131,7 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
             occupied = await db.scalar(occupied_query)
             if occupied:
                 raise HTTPException(status_code=422, detail=f"El puerto {c.nap_port} de {nap_box.name} ya está ocupado.")
-        c.nap_box = nap_box.name
+        c.nap_box = nap_box.display_name or nap_box.name
     elif c.nap_port is not None:
         raise HTTPException(status_code=422, detail="Selecciona una caja NAP antes de indicar el puerto.")
 

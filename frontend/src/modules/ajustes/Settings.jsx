@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
-import { Settings as SettingsIcon, Save, Building2, ShieldAlert, Smartphone, Users, DollarSign, MessageSquare, MapPin, Package, Headphones, Server, RefreshCw, Wifi, Calendar, Wrench } from "lucide-react";
+import { Settings as SettingsIcon, Save, Bell, Building2, ShieldAlert, Smartphone, Users, DollarSign, MessageSquare, MapPin, Package, Headphones, Server, RefreshCw, Wifi, Calendar, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 const SECTIONS = [
@@ -64,7 +64,10 @@ export default function Settings() {
     bcp_account: "",
     bbva_account: "",
     mikrotik_cut_list: "morosos",
-    google_maps_api_key: ""
+    google_maps_api_key: "",
+    system_alert_emails: [],
+    system_alert_phones: [],
+    payment_report_emails: []
   });
 
   useEffect(() => {
@@ -251,6 +254,19 @@ export default function Settings() {
           </div>
         </div>
 
+        <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div className="flex items-start gap-3 border-b border-slate-800 pb-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-300"><Bell className="h-4 w-4" /></span>
+            <div><h3 className="text-sm font-bold uppercase tracking-wider text-slate-300">Notificaciones del sistema</h3><p className="mt-1 text-[11px] text-slate-500">Destinatarios para alertas operativas y reportes. Pulsa Enter o coma para agregar varios.</p></div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 text-xs">
+            <RecipientField label="Correos para alerta de router o equipo caído" type="email" values={settings.system_alert_emails} placeholder="soporte@empresa.com" onChange={(values) => setSettings({ ...settings, system_alert_emails: values })} />
+            <RecipientField label="Números móviles para alerta de router o equipo caído" type="tel" values={settings.system_alert_phones} placeholder="941932971" onChange={(values) => setSettings({ ...settings, system_alert_phones: values })} />
+            <RecipientField label="Correos para reporte de pagos" type="email" values={settings.payment_report_emails} placeholder="facturacion@empresa.com" onChange={(values) => setSettings({ ...settings, payment_report_emails: values })} />
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-[11px] text-slate-500">Los procesos de monitoreo y facturación pueden leer estos destinos mediante la API de notificaciones del sistema. La entrega por correo requiere configurar SMTP en “Servidor de correo”; la entrega por SMS requiere un proveedor SMS configurado.</div>
+        </div>
+
         {/* Billing & Auto-cut configuration */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 pb-2 border-b border-slate-800 flex items-center gap-2">
@@ -345,4 +361,22 @@ export default function Settings() {
       </section>}
     </div>
   );
+}
+
+
+function RecipientField({ label, values, onChange, placeholder, type }) {
+  const [draft, setDraft] = useState("");
+  const recipients = Array.isArray(values) ? values : [];
+  const add = () => {
+    const next = draft.trim().replace(/,$/, "");
+    if (next && !recipients.includes(next)) onChange([...recipients, next]);
+    setDraft("");
+  };
+  return <label className="block text-slate-300 font-semibold">
+    <span className="mb-1 block">{label}</span>
+    <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 p-2 focus-within:border-cyan-500">
+      {recipients.map((recipient) => <span key={recipient} className="inline-flex items-center gap-1 rounded-lg bg-cyan-500/15 px-2 py-1 font-normal text-cyan-200">{recipient}<button type="button" onClick={() => onChange(recipients.filter((item) => item !== recipient))} className="ml-1 text-cyan-400 hover:text-white" aria-label={`Quitar ${recipient}`}>×</button></span>)}
+      <input type={type} value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={add} onKeyDown={(event) => { if (event.key === "Enter" || event.key === ",") { event.preventDefault(); add(); } }} placeholder={recipients.length ? "Agregar otro…" : placeholder} className="min-w-40 flex-1 bg-transparent px-1 py-1 text-slate-100 outline-none placeholder:text-slate-600" />
+    </div>
+  </label>;
 }

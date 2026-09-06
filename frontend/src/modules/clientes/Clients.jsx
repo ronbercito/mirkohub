@@ -50,7 +50,18 @@ export default function Clients({ onSelectClient }) {
     nap_box_id: "",
     nap_port: "",
     optical_power_dbm: "",
-    status: "active"
+    status: "active",
+    billing_day: new Date().getDate(),
+    billing_type: "prepaid",
+    invoice_lead_days: 5,
+    grace_days: 5,
+    cut_after_months: 1,
+    invoice_notification_channel: "none",
+    payment_reminder_channel: "none",
+    reminder_1_days: null,
+    reminder_2_days: null,
+    reminder_3_days: null,
+    create_first_invoice: true
   });
   const compatibleNetworks = ipv4Networks.filter((network) => network.router_id === formData.router_id);
 
@@ -196,7 +207,18 @@ export default function Clients({ onSelectClient }) {
                 nap_box_id: "",
                 nap_port: "",
                 optical_power_dbm: "",
-                status: "active"
+                status: "active",
+    billing_day: new Date().getDate(),
+    billing_type: "prepaid",
+    invoice_lead_days: 5,
+    grace_days: 5,
+    cut_after_months: 1,
+    invoice_notification_channel: "none",
+    payment_reminder_channel: "none",
+    reminder_1_days: null,
+    reminder_2_days: null,
+    reminder_3_days: null,
+    create_first_invoice: true
               });
               setShowAddModal(true);
             }}

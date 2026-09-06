@@ -1,23 +1,21 @@
 """
 Archivo: backend/app/routers/red/olt_onu_summary.py
 Pertenece a: Red > OLT > pestaña "ONUs" > contadores superiores.
-Función: Obtiene SOLO los contadores del PON seleccionado (total, online y offline).
+Función: Obtiene SOLO los contadores del PON seleccionado (total, online y offline)
+         usando `show onu state` en una sola sesión CLI.
 Regla: Este archivo NO modifica inventario, tarjetas, detalle ONU, óptica, consola ni
-       otras pestañas. Debe usar pocas consultas y una sola sesión CLI para no saturar
-       Telnet. Si esta lectura auxiliar falla, NO marca la OLT como offline.
+       otras pestañas. Debe seguir siendo ligero para no saturar Telnet.
 
-CLI confirmado directamente en la V-SOL V1600G1-B del usuario:
-  configure terminal
-  interface gpon 0/X
-  show onu state
-
-Ayuda confirmada en ese mismo modo:
-  show onu ?  -> state, info, auto-find, auto-learn, detail-info, time-stamp
-  show pon ?  -> info, onu, optical, rx_power, state, transceiver-info, ...
+Formato confirmado para esta familia VSOL:
+  gpon-olt(config-pon-0/1)# show onu state
+  OnuIndex    Admin State    OMCC State    Phase State    Config State    Channel
+  1/1/1:1     enable         enable        working        succeeded       1(GPON)
 
 IMPORTANTE:
-  `show onuinfo` NO existe en este firmware dentro de config-pon.
-  `show pon onu all rx-power` tampoco corresponde a la sintaxis mostrada por esta OLT.
+  El índice real puede venir como `1/1/PON:ONU`, no como `GPON0/PON:ONU`.
+  Por eso este parser reconoce ambos formatos y considera ONLINE cuando Phase State
+  contiene `working`/`online`/`registered`; el resto de ONUs detectadas se cuenta como
+  no-online para que Online + Offline coincida con el inventario del PON.
 """
 
 import re
@@ -42,10 +40,11 @@ _BAD_RE = re.compile(
 )
 
 _ONLINE_RE = re.compile(
-    r"\b(?:working|online|registered|up|syncmib|syncmib-fail)\b",
+    r"\b(?:working|online|registered|operation|up|syncmib|syncmib-fail)\b",
     re.IGNORECASE,
 )
-_OFFLINE_RE = re.compile(
+
+_EXPLICIT_OFFLINE_RE = re.compile(
     r"\b(?:offline|los|deregistered|down|dying[-\s]?gasp)\b",
     re.IGNORECASE,
 )
@@ -56,12 +55,26 @@ def _valid(raw: str) -> bool:
 
 
 def _extract_onu_id(line: str, pon: int):
-    """Extrae ONU ID cuando el firmware lo imprime; para contadores no es obligatorio."""
-    text = line or ""
+    """
+    Extrae ONU ID de los formatos observados en VSOL.
+
+    Ejemplos:
+      1/1/1:1      -> PON 1, ONU 1
+      1/1/8:26     -> PON 8, ONU 26
+      GPON0/8:26   -> PON 8, ONU 26
+      0/8:26       -> PON 8, ONU 26
+    """
+    text = (line or "").strip()
+
     patterns = (
-        rf"(?:GPON|EPON)?\s*0/{int(pon)}\s*[:/]\s*(\d{{1,3}})",
-        r"\bONU(?:\s*(?:ID|INDEX))?\s*[:=#-]?\s*(\d{1,3})\b",
+        # Formato mostrado por manuales/firmwares VSOL: chassis/slot/pon:onu
+        rf"^\s*(?:\d+/)+{int(pon)}\s*:\s*(\d{{1,3}})\b",
+        # Formato GPON0/8:26 o 0/8:26
+        rf"(?:GPON|EPON)?\s*0/{int(pon)}\s*:\s*(\d{{1,3}})\b",
+        # Variante 0/8/26
+        rf"(?:GPON|EPON)?\s*0/{int(pon)}/(\d{{1,3}})\b",
     )
+
     for pattern in patterns:
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
@@ -69,130 +82,55 @@ def _extract_onu_id(line: str, pon: int):
             if 1 <= value <= 128:
                 return value
 
-    # Dentro de interface gpon 0/X muchas VSOL muestran sólo el ID al inicio.
-    local = re.match(r"^\s*(\d{1,3})(?:\s+|\||$)", text)
-    if local:
-        value = int(local.group(1))
-        if 1 <= value <= 128:
-            return value
     return None
 
 
-def _parse_footer(raw: str):
-    """Reconoce resúmenes globales que algunas revisiones añaden al final."""
-    text = (raw or "").replace("\r", "")
-
-    patterns = (
-        # Total Num: 52 (num of working: 49)
-        r"Total\s+Num\s*:\s*(\d+)\s*\([^\n]*?(?:num\s+of\s+)?working\s*:\s*(\d+)",
-        # Total: 52  Working: 49
-        r"Total(?:\s+ONU(?:s)?)?\s*[:=]\s*(\d+)[^\n]*?(?:Working|Online)\s*[:=]\s*(\d+)",
-        # ONU Total 52 Online 49
-        r"(?:ONU\s+)?Total\s+(\d+)[^\n]*?(?:Working|Online)\s+(\d+)",
-    )
-
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            total = int(match.group(1))
-            online = int(match.group(2))
-            return total, online, max(0, total - online)
-
-    return None
-
-
-def _parse_state(raw: str, pon: int, inventory_total: int):
+def _parse_state_table(raw: str, pon: int, inventory_total: int):
     """
-    Convierte la salida real de `show onu state` a contadores.
+    Parsea la tabla de `show onu state`.
 
-    Estrategia:
-      1. Usa el resumen del propio CLI si existe.
-      2. Cuenta filas por ONU ID cuando el ID está presente.
-      3. Si el firmware no imprime ID en cada fila, cuenta líneas que contienen estados.
-
-    El paso 3 es deliberado: para estos cuadros sólo necesitamos cantidades, no asociar
-    todavía cada estado con una tarjeta ONU. Así evitamos que un formato de columnas
-    distinto vuelva a dejar los contadores en cero.
+    Se considera una fila ONU si contiene un índice válido del PON actual.
+    ONLINE = Phase State operativo (`working`, `online`, etc.).
+    OFFLINE = fila ONU no operativa. Si el inventario contiene más ONUs que la tabla,
+              la diferencia se cuenta como offline/no-online.
     """
-    footer = _parse_footer(raw)
-    if footer:
-        state_total, online, offline = footer
-        return {
-            "total": inventory_total or state_total,
-            "online": online,
-            "offline": offline if not inventory_total else max(0, inventory_total - online),
-            "mode": "footer",
-        }
-
+    all_ids = set()
     online_ids = set()
-    offline_ids = set()
-    online_lines = 0
-    offline_lines = 0
+    explicit_offline_ids = set()
 
     for original in (raw or "").replace("\r", "").splitlines():
-        line = original.strip()
-        if not line:
+        onu_id = _extract_onu_id(original, pon)
+        if not onu_id:
             continue
 
-        # No contar cabeceras ni el eco del comando.
-        low = line.lower()
-        if low == "show onu state" or low.startswith("gpon-olt("):
-            continue
-        if ("onu" in low and "state" in low and not _ONLINE_RE.search(line) and not _OFFLINE_RE.search(line)):
-            continue
+        all_ids.add(onu_id)
+        low = original.lower()
 
-        is_offline = bool(_OFFLINE_RE.search(line))
-        is_online = bool(_ONLINE_RE.search(line)) and not is_offline
-        if not is_online and not is_offline:
-            continue
+        if _EXPLICIT_OFFLINE_RE.search(low):
+            explicit_offline_ids.add(onu_id)
+            online_ids.discard(onu_id)
+        elif _ONLINE_RE.search(low):
+            online_ids.add(onu_id)
+            explicit_offline_ids.discard(onu_id)
 
-        onu_id = _extract_onu_id(line, pon)
-        if onu_id:
-            if is_online:
-                online_ids.add(onu_id)
-                offline_ids.discard(onu_id)
-            else:
-                offline_ids.add(onu_id)
-                online_ids.discard(onu_id)
-        else:
-            if is_online:
-                online_lines += 1
-            else:
-                offline_lines += 1
+    detected_total = len(all_ids)
+    online = len(online_ids)
 
-    if online_ids or offline_ids:
-        online = len(online_ids)
-        offline = len(offline_ids)
-        known = online + offline
-        if inventory_total and known < inventory_total:
-            # Estados no reconocidos/transitorios se muestran como offline para que
-            # Online + Offline siempre cuadre con el inventario visible del PON.
-            offline += inventory_total - known
-        return {
-            "total": inventory_total or known,
-            "online": online,
-            "offline": offline,
-            "mode": "ids",
-        }
+    # El total visible de la pestaña ya viene del inventario ONU del PON y es la fuente
+    # más fiable para cantidad autorizada. Si no está disponible, usamos la tabla state.
+    total = inventory_total or detected_total
 
-    if online_lines or offline_lines:
-        online = online_lines
-        offline = offline_lines
-        known = online + offline
-        if inventory_total and known < inventory_total:
-            offline += inventory_total - known
-        return {
-            "total": inventory_total or known,
-            "online": online,
-            "offline": offline,
-            "mode": "lines",
-        }
+    if total:
+        offline = max(0, total - online)
+    else:
+        offline = max(0, detected_total - online)
 
     return {
-        "total": inventory_total,
-        "online": 0,
-        "offline": 0,
-        "mode": "none",
+        "total": total,
+        "online": online,
+        "offline": offline,
+        "detected_rows": detected_total,
+        "explicit_offline": len(explicit_offline_ids),
     }
 
 
@@ -230,7 +168,6 @@ async def onu_summary(
             commands.append("show onu state")
 
     except Exception as exc:
-        # Es un endpoint auxiliar: no cambiar status de la OLT ni tocar otras pestañas.
         return {
             "ok": False,
             "error": str(exc),
@@ -247,7 +184,7 @@ async def onu_summary(
     if not _valid(state_raw):
         return {
             "ok": False,
-            "error": "`show onu state` no devolvió una tabla de estados válida",
+            "error": "`show onu state` no devolvió una tabla válida",
             "total": total,
             "online": 0,
             "offline": 0,
@@ -258,19 +195,23 @@ async def onu_summary(
             "state_preview": state_raw[:8000],
         }
 
-    counts = _parse_state(state_raw, pon, total)
+    counts = _parse_state_table(state_raw, pon, total)
+
+    # Si no detectamos ni una fila, devolver ok=false para no presentar un 0 como si
+    # fuera una lectura correcta. El preview queda disponible para diagnóstico.
+    ok = counts["detected_rows"] > 0
 
     return {
-        "ok": counts["mode"] != "none",
-        "error": "" if counts["mode"] != "none" else "No se reconocieron estados en la salida de `show onu state`",
+        "ok": ok,
+        "error": "" if ok else "No se reconoció ninguna fila ONU en `show onu state`",
         "total": counts["total"],
         "online": counts["online"],
         "offline": counts["offline"],
         "named": None,
         "named_supported": False,
-        "source": f"show onu state:{counts['mode']}",
+        "source": "show onu state:1/1/pon:onu" if ok else "show onu state:unparsed",
         "commands": commands,
-        # Diagnóstico temporal para adaptar este parser al formato exacto del firmware
-        # sin tocar vsol.py ni ninguna otra pestaña.
+        "detected_rows": counts["detected_rows"],
+        "explicit_offline": counts["explicit_offline"],
         "state_preview": state_raw[:8000],
     }

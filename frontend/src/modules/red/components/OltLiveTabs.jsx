@@ -13,6 +13,7 @@ import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
 import { RefreshCw, Terminal, Power, RotateCw, Trash2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import PonOpticalPanel from "./PonOpticalPanel";
 
 const TABS = [
   { id: "system", label: "Resumen" },
@@ -137,7 +138,11 @@ export default function OltLiveTabs({ router }) {
         </div>
       )}
 
-      {res?.ok && tab !== "system" && (
+      {res?.ok && tab === "pon_optical" && (
+        <PonOpticalPanel res={res} pon={pon} loading={loading} />
+      )}
+
+      {res?.ok && tab !== "system" && tab !== "pon_optical" && (
         rows.length ? (
           <div className="overflow-x-auto rounded-xl border border-slate-800">
             <table className="w-full text-left text-xs" data-testid={`olt-table-${tab}`}>

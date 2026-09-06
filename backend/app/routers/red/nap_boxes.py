@@ -51,7 +51,7 @@ async def create_nap_box(data: NapBoxIn, db: AsyncSession = Depends(get_db)):
     exists = await db.scalar(select(NapBox.id).where(func.lower(NapBox.name) == data.name.strip().lower()))
     if exists:
         raise HTTPException(status_code=422, detail="Ya existe una caja NAP con ese nombre.")
-    box = NapBox(**data.model_dump(), name=data.name.strip())
+    box = NapBox(**{**data.model_dump(), "name": data.name.strip()})
     db.add(box)
     await db.commit()
     return {**box.to_dict(), "assigned_ports": {}, "used_ports": 0}

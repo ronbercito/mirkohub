@@ -5,7 +5,7 @@ Trabaja con: backend/app/routers/clientes/router.py, backend/app/models/client.p
 """
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ClientIn(BaseModel):
@@ -33,5 +33,14 @@ class ClientIn(BaseModel):
     nap_port: Optional[int] = None
     optical_power_dbm: Optional[float] = None
     status: str = "active"
-    billing_day: int = 5
+    billing_day: int = Field(default=5, ge=1, le=30)
+    billing_type: str = "prepaid"
+    invoice_lead_days: int = Field(default=5, ge=1, le=20)
+    grace_days: int = Field(default=5, ge=1, le=20)
+    cut_after_months: int = Field(default=1, ge=1, le=6)
+    invoice_notification_channel: str = "none"
+    payment_reminder_channel: str = "none"
+    reminder_1_days: Optional[int] = Field(default=None, ge=1, le=20)
+    reminder_2_days: Optional[int] = Field(default=None, ge=1, le=20)
+    reminder_3_days: Optional[int] = Field(default=None, ge=1, le=20)
     create_first_invoice: bool = True

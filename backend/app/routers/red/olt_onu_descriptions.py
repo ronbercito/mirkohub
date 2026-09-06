@@ -2,6 +2,7 @@
 Archivo: backend/app/routers/red/olt_onu_descriptions.py
 Pertenece a: Red > OLT > ONUs v2 > columna "Descripción".
 Función: Lee directamente de la VSOL la descripción/nombre configurado en cada ONU.
+Alcance: Parser compartido y endpoint de nombres; una lectura por sesión.
 Regla: Este archivo SOLO resuelve descripciones. No modifica el inventario, estados,
        perfiles, modelos, óptica ni otras pestañas de la OLT.
 
@@ -50,75 +51,28 @@ def _parse_ids(ids: str) -> list[int]:
     return sorted(found)
 
 
-def _parse_running_config(raw: str, allowed: set[int]) -> dict[int, str]:
-    """Extrae `onu N desc TEXTO` de la configuración del PON."""
+def _parse_running_config(raw: str, allowed: set[int], pon: int = 1) -> dict[int, str]:
+    """Lee desc exclusivamente del bloque GPON seleccionado, sin consultas por ONU."""
+    text = _clean(raw)
+    # Sin cabeceras, la respuesta está limitada al contexto PON de run_pon.
+    has_interfaces = bool(re.search(r"^\s*interface\s+", text, re.M | re.I))
+    selected = not has_interfaces
     result: dict[int, str] = {}
-    text = _clean(raw)
-
     for original in text.splitlines():
-        line = _CURSOR_RE.sub(" ", original).strip()
-        if not line:
+        line = original.strip()
+        if re.match(r"^interface\s+", line, re.I):
+            selected = bool(re.fullmatch(rf"interface\s+gpon\s+0/{int(pon)}", line, re.I))
             continue
-
-        match = re.search(r"\bonu\s+(\d{1,3})\s+desc\s+(.+?)\s*$", line, re.IGNORECASE)
-        if not match:
+        if has_interfaces and line.lower() in {"exit", "end", "!"}:
+            selected = False
             continue
-
-        onu_id = int(match.group(1))
-        if onu_id not in allowed:
+        if not selected:
             continue
-
-        description = match.group(2).strip().strip('"').strip("'")
-        if description:
-            result[onu_id] = description
-
+        match = re.match(r"^onu\s+(\d{1,3})\s+desc\s+(.+?)\s*$", line, re.I)
+        if match and int(match[1]) in allowed:
+            # No borrar secuencias como 12C dentro de un nombre legítimo.
+            result[int(match[1])] = match[2].strip().strip('"').strip("'")
     return result
-
-
-def _parse_single_description(raw: str, onu_id: int) -> str:
-    """Tolera varias formas de respuesta de `show onu <id> description`."""
-    text = _clean(raw)
-    if not text.strip() or _BAD_RE.search(text):
-        return ""
-
-    lines = []
-    for original in text.splitlines():
-        line = _CURSOR_RE.sub(" ", original).strip()
-        if not line:
-            continue
-        if re.search(r"^show\s+onu\s+\d+\s+description$", line, re.IGNORECASE):
-            continue
-        if re.search(r"^(?:gpon-olt|epon-olt)[^#>]*[#>]", line, re.IGNORECASE):
-            continue
-        lines.append(line)
-
-    # Formatos como `Description: NOMBRE` / `ONU Description : NOMBRE`.
-    for line in lines:
-        match = re.search(r"(?:onu\s+)?description\s*[:=]\s*(.+)$", line, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip().strip('"').strip("'")
-            if value:
-                return value
-
-    # Formato de configuración devuelto por algunos firmwares.
-    for line in lines:
-        match = re.search(
-            rf"\bonu\s+{int(onu_id)}\s+description\s+(.+?)\s*$",
-            line,
-            re.IGNORECASE,
-        )
-        if match:
-            value = match.group(1).strip().strip('"').strip("'")
-            if value:
-                return value
-
-    # Si el comando devuelve únicamente el texto, usar la última línea útil.
-    ignored = re.compile(r"^(?:onu\s*id|description|[-=]+)$", re.IGNORECASE)
-    candidates = [line for line in lines if not ignored.match(line)]
-    if len(candidates) == 1:
-        return candidates[0].strip().strip('"').strip("'")
-
-    return ""
 
 
 @router.get("/{router_id}/olt/onu-descriptions")
@@ -149,7 +103,7 @@ async def onu_descriptions(
             # Una sola lectura puede contener todas las descripciones del PON.
             running_raw = await cli.run_pon(pon, "show running-config", raise_on_error=False)
             if running_raw and not _BAD_RE.search(running_raw):
-                descriptions.update(_parse_running_config(running_raw, allowed))
+                descriptions.update(_parse_running_config(running_raw, allowed, pon))
 
     except Exception as exc:
         return {

@@ -27,6 +27,7 @@ DEFAULT_SETTINGS = {
     "bcp_account": "",
     "bbva_account": "",
     "mikrotik_cut_list": "morosos",
+    "google_maps_api_key": "",
 }
 
 

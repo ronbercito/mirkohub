@@ -1,9 +1,11 @@
 /**
  * Archivo: frontend/src/modules/red/components/olt-tabs/onu/OnuSummaryCounters.jsx
  * Pertenece a: Red > OLT > ONUs > contadores superiores.
- * Función: Muestra total, online, offline y ONUs con nombre del PON seleccionado.
- * Regla: Este componente sólo maneja los contadores; no modifica tarjetas, detalle,
+ * Función: Muestra únicamente total, online, offline y disponibilidad de nombres del PON.
+ * Regla: Este componente sólo maneja los contadores. No modifica tarjetas, detalle,
  *        óptica, acciones ONU ni ninguna otra pestaña de la OLT.
+ * Nota: Si el backend todavía no dispone de una fuente global fiable para nombres,
+ *       se muestra "—" en vez de un 0 incorrecto.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -29,7 +31,7 @@ const Stat = ({ icon: Icon, label, value, valueClass = "text-slate-100", loading
 export default function OnuSummaryCounters({ router, pon, total = 0, refreshKey = 0 }) {
   const { API, token } = useAuth();
   const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
-  const [data, setData] = useState({ total, online: 0, offline: 0, named: 0 });
+  const [data, setData] = useState({ total, online: 0, offline: 0, named: null });
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -46,21 +48,21 @@ export default function OnuSummaryCounters({ router, pon, total = 0, refreshKey 
           total,
           online: Number(response.data.online || 0),
           offline: Number(response.data.offline || 0),
-          named: Number(response.data.named || 0),
+          named: response.data.named == null ? null : Number(response.data.named),
         });
       } else {
-        setData((prev) => ({ ...prev, total }));
+        setData({ total, online: 0, offline: 0, named: null });
       }
     } catch (error) {
       console.warn("No se pudieron actualizar los contadores ONU", error);
-      setData((prev) => ({ ...prev, total }));
+      setData({ total, online: 0, offline: 0, named: null });
     } finally {
       setLoading(false);
     }
   }, [API, headers, router?.id, pon, total]);
 
   useEffect(() => {
-    setData({ total, online: 0, offline: 0, named: 0 });
+    setData({ total, online: 0, offline: 0, named: null });
     load();
   }, [load, refreshKey, total]);
 
@@ -75,7 +77,13 @@ export default function OnuSummaryCounters({ router, pon, total = 0, refreshKey 
         loading={loading}
         valueClass={data.offline ? "text-rose-300" : "text-slate-100"}
       />
-      <Stat icon={User} label="Con nombre en OLT" value={data.named} loading={loading} valueClass="text-cyan-300" />
+      <Stat
+        icon={User}
+        label="Con nombre en OLT"
+        value={data.named == null ? "—" : data.named}
+        loading={loading}
+        valueClass="text-cyan-300"
+      />
     </div>
   );
 }

@@ -9,7 +9,7 @@ Trabaja con: models/ipv4_network.py, models/client.py, models/router.py,
 """
 import ipaddress
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,6 +76,35 @@ async def _public_rows(db: AsyncSession):
 @router.get("")
 async def list_ipv4_networks(db: AsyncSession = Depends(get_db)):
     return await _public_rows(db)
+
+
+@router.get("/{network_id}/available-addresses")
+async def list_available_addresses(
+    network_id: str,
+    exclude_client_id: str = "",
+    limit: int = Query(default=1024, ge=1, le=4096),
+    db: AsyncSession = Depends(get_db),
+):
+    """Devuelve IPs libres del inventario, excluyendo las registradas en otros abonados."""
+    row = await get_or_404(db, IPv4Network, network_id, "Red IPv4")
+    network = ipaddress.ip_network(row.cidr)
+    assigned_query = select(Client.ip_address).where(
+        Client.ipv4_network_id == row.id,
+        Client.ip_address != "",
+    )
+    if exclude_client_id:
+        assigned_query = assigned_query.where(Client.id != exclude_client_id)
+    assigned = set((await db.execute(assigned_query)).scalars().all())
+    addresses = []
+    for address in network.hosts():
+        value = str(address)
+        if value not in assigned:
+            addresses.append(value)
+            if len(addresses) >= limit:
+                break
+    total_free = max(network.num_addresses - 2 - len(assigned), 0)
+    return {"network_id": row.id, "cidr": row.cidr, "addresses": addresses,
+            "total_free": total_free, "truncated": total_free > len(addresses)}
 
 
 @router.post("")

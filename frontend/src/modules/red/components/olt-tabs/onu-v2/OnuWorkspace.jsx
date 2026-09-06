@@ -3,7 +3,8 @@
  * Pertenece a: Red > OLT > pestaña "ONUs".
  * Función: Orquesta los submenús independientes de ONUs v2 y consulta /olt/onus-v2.
  * Regla: Este archivo NO parsea CLI ni abre lecturas auxiliares de Telnet. Toda la
- *        información de Lista/Estado/Autorización/Óptica llega del backend ONUs v2.
+ * Alcance: pasa el equipo a la lista, que delega RX bajo demanda a OnuPowerCell.
+ * No modifica parsers, configuración de equipos ni otras pestañas.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -109,7 +110,7 @@ export default function OnuWorkspace({ router, pon, onAction, refreshSeq = 0, sh
             </div>
           )}
 
-          {data?.ok && tab === "list" && <OnuListView onus={onus} onAction={onAction} />}
+          {data?.ok && tab === "list" && <OnuListView key={router.id + ":" + pon} routerId={router.id} onus={onus} onAction={onAction} />}
           {data?.ok && tab === "state" && <OnuStateView onus={onus} />}
           {data?.ok && tab === "auth" && <OnuAuthView onus={onus} />}
           {data?.ok && tab === "optical" && <OnuOpticalView onus={onus} />}

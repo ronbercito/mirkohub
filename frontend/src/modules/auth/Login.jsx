@@ -32,7 +32,7 @@ export default function Login() {
     setError("");
     try {
       await login(email, password);
-      toast.success("¡Bienvenido al Panel de Control FibraZ!");
+      toast.success(`¡Bienvenido al Panel de Control ${branding.company_name}!`);
     } catch (err) {
       const msg = err.response?.data?.detail || "Error al iniciar sesión. Verifique credenciales.";
       setError(typeof msg === "string" ? msg : JSON.stringify(msg));

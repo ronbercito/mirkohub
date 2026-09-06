@@ -67,9 +67,12 @@ async def _public_rows(db: AsyncSession):
     for row in rows:
         network = ipaddress.ip_network(row.cidr)
         used = counts.get(row.id, 0)
-        hosts = max(network.num_addresses - 2, 0)
-        result.append({**row.to_dict(), "usable_hosts": hosts, "used_ips": used,
-                       "usage_percent": round((used / hosts * 100) if hosts else 0, 1)})
+        # Se reservan red, broadcast y el primer host (.1) como gateway del MikroTik.
+        assignable_hosts = max(network.num_addresses - 3, 0)
+        available_ips = max(assignable_hosts - used, 0)
+        result.append({**row.to_dict(), "usable_hosts": assignable_hosts, "used_ips": used,
+                       "available_ips": available_ips,
+                       "usage_percent": round((used / assignable_hosts * 100) if assignable_hosts else 0, 1)})
     return result
 
 
@@ -95,14 +98,15 @@ async def list_available_addresses(
     if exclude_client_id:
         assigned_query = assigned_query.where(Client.id != exclude_client_id)
     assigned = set((await db.execute(assigned_query)).scalars().all())
+    gateway = network.network_address + 1
     addresses = []
     for address in network.hosts():
         value = str(address)
-        if value not in assigned:
+        if address != gateway and value not in assigned:
             addresses.append(value)
             if len(addresses) >= limit:
                 break
-    total_free = max(network.num_addresses - 2 - len(assigned), 0)
+    total_free = max(network.num_addresses - 3 - len(assigned), 0)
     return {"network_id": row.id, "cidr": row.cidr, "addresses": addresses,
             "total_free": total_free, "truncated": total_free > len(addresses)}
 
@@ -117,7 +121,8 @@ async def create_ipv4_network(data: IPv4NetworkIn, db: AsyncSession = Depends(ge
                       usage_type=data.usage_type)
     db.add(row)
     await db.commit()
-    return {**row.to_dict(), "usable_hosts": max(value.num_addresses - 2, 0), "used_ips": 0, "usage_percent": 0}
+    return {**row.to_dict(), "usable_hosts": max(value.num_addresses - 3, 0), "used_ips": 0,
+            "available_ips": max(value.num_addresses - 3, 0), "usage_percent": 0}
 
 
 @router.put("/{network_id}")
@@ -133,8 +138,11 @@ async def update_ipv4_network(network_id: str, data: IPv4NetworkIn, db: AsyncSes
     row.network_address, row.prefix_length = str(value.network_address), value.prefixlen
     row.router_id, row.router_name, row.usage_type = rtr.id, rtr.name, data.usage_type
     await db.commit()
-    return {**row.to_dict(), "usable_hosts": max(value.num_addresses - 2, 0), "used_ips": assigned or 0,
-            "usage_percent": round(((assigned or 0) / max(value.num_addresses - 2, 1)) * 100, 1)}
+    assignable_hosts = max(value.num_addresses - 3, 0)
+    used_ips = assigned or 0
+    return {**row.to_dict(), "usable_hosts": assignable_hosts, "used_ips": used_ips,
+            "available_ips": max(assignable_hosts - used_ips, 0),
+            "usage_percent": round((used_ips / max(assignable_hosts, 1)) * 100, 1)}
 
 
 @router.delete("/{network_id}")

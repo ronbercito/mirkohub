@@ -110,6 +110,8 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
         if not equipment:
             raise HTTPException(status_code=422, detail="El equipo de monitoreo seleccionado ya no existe.")
         c.monitoring_equipment_name = equipment.name
+        c.nap_box_id, c.nap_box, c.nap_port = "", "", None
+        c.onu_sn, c.optical_power_dbm = "", None
     else:
         c.monitoring_equipment_id = ""
         c.monitoring_equipment_name = ""

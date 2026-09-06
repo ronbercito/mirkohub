@@ -15,6 +15,7 @@ from app.core.security import get_current_user
 from app.core.utils import get_or_404
 from app.models.client import Client
 from app.models.nap_box import NapBox
+from app.models.zone import Zone
 
 router = APIRouter(prefix="/nap-boxes", tags=["Red / Cajas NAP"], dependencies=[Depends(get_current_user)])
 
@@ -26,6 +27,7 @@ class NapBoxIn(BaseModel):
     longitude: float | None = None
     ports: int = Field(ge=1, le=128)
     details: str = ""
+    zone_id: str = Field(min_length=1)
 
 
 async def _rows(db: AsyncSession):
@@ -51,7 +53,10 @@ async def create_nap_box(data: NapBoxIn, db: AsyncSession = Depends(get_db)):
     exists = await db.scalar(select(NapBox.id).where(func.lower(NapBox.name) == data.name.strip().lower()))
     if exists:
         raise HTTPException(status_code=422, detail="Ya existe una caja NAP con ese nombre.")
-    box = NapBox(**{**data.model_dump(), "name": data.name.strip()})
+    zone = await db.get(Zone, data.zone_id)
+    if not zone:
+        raise HTTPException(status_code=422, detail="La zona seleccionada ya no existe.")
+    box = NapBox(**{**data.model_dump(), "name": data.name.strip(), "zone_name": zone.name})
     db.add(box)
     await db.commit()
     return {**box.to_dict(), "assigned_ports": {}, "used_ports": 0}
@@ -63,7 +68,11 @@ async def update_nap_box(box_id: str, data: NapBoxIn, db: AsyncSession = Depends
     used = await db.scalar(select(func.count(Client.id)).where(Client.nap_box_id == box.id))
     if used and data.ports < used:
         raise HTTPException(status_code=422, detail=f"No puedes reducir los puertos: hay {used} cliente(s) asignado(s).")
+    zone = await db.get(Zone, data.zone_id)
+    if not zone:
+        raise HTTPException(status_code=422, detail="La zona seleccionada ya no existe.")
     box.name, box.location = data.name.strip(), data.location.strip()
+    box.zone_id, box.zone_name = zone.id, zone.name
     box.latitude, box.longitude = data.latitude, data.longitude
     box.ports, box.details = data.ports, data.details.strip()
     await db.commit()

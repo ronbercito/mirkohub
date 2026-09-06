@@ -6,6 +6,12 @@ Función: Punto de entrada del backend FastAPI (uvicorn server:app). Configura C
 Trabaja con: backend/app/core/config.py, database.py, seed.py,
              backend/app/routers/<modulo>/router.py (auth, inicio, clientes, planes, red,
              facturacion, tickets, almacen, hotspot, tareas, mensajeria, ajustes)
+
+Regla de rutas OLT:
+- Las rutas específicas de submódulos OLT deben montarse ANTES del router genérico
+  de Red, porque Red contiene /routers/{router_id}/olt/{action}. FastAPI resuelve
+  rutas por orden; si el genérico va primero, una ruta como /olt/onu-summary queda
+  capturada como action="onu-summary" y nunca llega a su archivo independiente.
 """
 from app.core.config import CORS_ORIGINS  # carga .env primero
 
@@ -54,13 +60,15 @@ app.add_middleware(
 )
 
 api = APIRouter(prefix="/api")
+
+# IMPORTANTE: esta ruta específica debe ir antes de red_router.
+# Si red_router se monta primero, su ruta genérica /{router_id}/olt/{action}
+# intercepta /{router_id}/olt/onu-summary y devuelve "Acción de lectura no válida".
+api.include_router(olt_onu_summary_router, prefix="/routers", tags=["Red / OLT / ONUs"])
+
 for r in (auth_router, inicio_router, clientes_router, planes_router, red_router, facturacion_router,
           tickets_router, almacen_router, hotspot_router, tareas_router, mensajeria_router, ajustes_router):
     api.include_router(r)
-
-# Endpoint aislado de la pestaña ONUs. Se monta fuera de red/router.py para evitar
-# mezclar la lógica de contadores con las rutas ya estables del resto del módulo Red.
-api.include_router(olt_onu_summary_router, prefix="/routers", tags=["Red / OLT / ONUs"])
 
 
 @api.get("/health")

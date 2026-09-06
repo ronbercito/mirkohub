@@ -35,7 +35,7 @@ const menuItems = [
   { id: "ajustes", label: "Ajustes", icon: Settings, testId: TEST_IDS.NAV_AJUSTES },
 ];
 
-export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, companyName = "FibraZ" }) {
+export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, companyName = "MikroHub", logoData = "" }) {
   const { user, logout } = useAuth();
   const groupForTab = (tab) => { const parent = menuItems.find((item) => item.id === tab || item.children?.some((child) => child.id === tab)); return parent?.children ? parent.id : null; };
   const [openGroup, setOpenGroup] = useState(() => groupForTab(activeTab));
@@ -55,7 +55,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, co
     <div>
       <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/80">
         <div className="flex items-center gap-2.5 overflow-hidden">
-          <div className="h-9 w-9 min-w-[36px] rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-md shadow-cyan-500/20"><Wifi className="w-5 h-5 text-white" /></div>
+          <div className="h-9 w-9 min-w-[36px] rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center overflow-hidden shadow-md shadow-cyan-500/20">{logoData ? <img src={logoData} alt="Logo de empresa" className="h-full w-full object-contain bg-white/5" /> : <Wifi className="w-5 h-5 text-white" />}</div>
           {isOpen && <div><span className="text-lg font-black tracking-tight text-white block truncate">{companyName}</span><span className="text-[10px] text-cyan-400 font-bold block -mt-1 tracking-widest uppercase">ISP PORTAL</span></div>}
         </div>
         <button onClick={() => setIsOpen(!isOpen)} className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition">{isOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</button>

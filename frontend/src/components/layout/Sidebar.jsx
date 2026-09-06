@@ -9,7 +9,7 @@ import { TEST_IDS } from "../../constants/testIds";
 import { 
   Home, Server, Zap, Users, Wifi, Calendar, 
   DollarSign, Package, Headphones, MessageSquare, Settings, 
-  ChevronRight, LogOut, ShieldCheck, ChevronLeft, Network
+  ChevronRight, LogOut, ShieldCheck, ChevronLeft, Network, Box
 } from "lucide-react";
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen }) {
@@ -19,6 +19,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen }) 
     { id: "inicio", label: "Inicio", icon: Home, testId: TEST_IDS.NAV_INICIO },
     { id: "red", label: "Gestión de Red", icon: Server, testId: TEST_IDS.NAV_RED },
     { id: "red_ipv4", label: "Redes IPv4", icon: Network },
+    { id: "nap_boxes", label: "Cajas NAP", icon: Box },
     { id: "servicios", label: "Servicios / Planes", icon: Zap, testId: TEST_IDS.NAV_SERVICIOS },
     { id: "clientes", label: "Clientes", icon: Users, testId: TEST_IDS.NAV_CLIENTES },
     { id: "facturacion", label: "Finanzas / Facturación", icon: DollarSign, testId: TEST_IDS.NAV_FACTURACION },
@@ -90,7 +91,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen }) 
                   key={item.id}
                   data-testid={item.testId}
                   onClick={() => setActiveTab(item.id)}
-                  className={`${item.id === "red_ipv4" && isOpen ? "ml-4 w-[calc(100%-1rem)] py-2" : "w-full py-2.5"} flex items-center gap-3 px-3 rounded-xl text-xs font-semibold transition-all duration-150 group ${
+                  className={`${(item.id === "red_ipv4" || item.id === "nap_boxes") && isOpen ? "ml-4 w-[calc(100%-1rem)] py-2" : "w-full py-2.5"} flex items-center gap-3 px-3 rounded-xl text-xs font-semibold transition-all duration-150 group ${
                     isActive
                       ? "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-sm"
                       : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"

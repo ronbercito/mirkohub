@@ -1,19 +1,18 @@
 /**
  * Archivo: frontend/src/modules/red/components/OltLiveTabs.jsx
- * Función: Pestañas de lectura en vivo de una OLT VSOL (por CLI Telnet/SSH): Resumen (show version),
- *          Puertos PON (óptica y estadísticas), ONUs autorizadas, ONUs pendientes (auto-find),
- *          Óptica de ONUs y Consola libre. Las tablas se dibujan con las columnas que devuelva la OLT
- *          (parser genérico), y siempre se puede ver la salida cruda. Acciones sobre ONU:
- *          autorizar por SN, reiniciar, desactivar/activar y eliminar.
+ * Función: Pestañas de lectura en vivo de una OLT VSOL (por CLI Telnet/SSH): Resumen,
+ *          Puertos PON, ONUs, pendientes (auto-find), óptica y consola. La pestaña ONUs
+ *          usa una vista gráfica enriquecida con clientes/planes del sistema.
  * Trabaja con: modules/red/Network.jsx, backend/app/routers/red/router.py (/api/routers/{id}/olt/*),
  *              backend/app/integrations/olt/vsol.py (OLT_PROFILES)
  */
 import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
-import { RefreshCw, Terminal, Power, RotateCw, Trash2, CheckCircle2 } from "lucide-react";
+import { RefreshCw, Terminal, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import PonOpticalPanel from "./PonOpticalPanel";
+import OnuCardsPanel from "./OnuCardsPanel";
 
 const TABS = [
   { id: "system", label: "Resumen" },
@@ -69,7 +68,7 @@ export default function OltLiveTabs({ router }) {
     try {
       const r = await axios.post(`${API}/routers/${router.id}/olt/onu/${action}`, { pon, onu: parseInt(onu) || 0, sn, profile: auth.profile }, { headers });
       toast.success(r.data.message);
-      load();
+      await load();
     } catch (err) {
       toast.error(err?.response?.data?.detail || "La OLT rechazó la acción");
     }
@@ -77,8 +76,6 @@ export default function OltLiveTabs({ router }) {
 
   const rows = res?.rows || [];
   const cols = rows.length ? Object.keys(rows[0]) : [];
-  const onuIdOf = (row) => row[cols.find((c) => /onu|index|id/i.test(c)) || cols[0]];
-  const snOf = (row) => row[cols.find((c) => /sn|serial|mac/i.test(c))] || "";
 
   return (
     <div data-testid="olt-live-tabs">
@@ -142,25 +139,21 @@ export default function OltLiveTabs({ router }) {
         <PonOpticalPanel res={res} pon={pon} loading={loading} />
       )}
 
-      {res?.ok && tab !== "system" && tab !== "pon_optical" && (
+      {res?.ok && tab === "onu_list" && (
+        <OnuCardsPanel router={router} pon={pon} rows={rows} onAction={onuAction} onRefresh={load} />
+      )}
+
+      {res?.ok && tab !== "system" && tab !== "pon_optical" && tab !== "onu_list" && (
         rows.length ? (
           <div className="overflow-x-auto rounded-xl border border-slate-800">
             <table className="w-full text-left text-xs" data-testid={`olt-table-${tab}`}>
               <thead className="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
-                <tr>{cols.map((c) => <th key={c} className="py-2.5 px-3 text-[10px]">{c}</th>)}{tab === "onu_list" && <th />}</tr>
+                <tr>{cols.map((c) => <th key={c} className="py-2.5 px-3 text-[10px]">{c}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
                 {rows.map((r, i) => (
                   <tr key={i} className="hover:bg-slate-800/40">
                     {cols.map((c) => <td key={c} className={`py-2 px-3 font-mono ${/online|up|active/i.test(r[c]) ? "text-emerald-300" : /offline|down|los/i.test(r[c]) ? "text-rose-300" : ""}`}>{r[c]}</td>)}
-                    {tab === "onu_list" && (
-                      <td className="py-2 px-3 text-right whitespace-nowrap">
-                        <button title="Reiniciar" data-testid={`olt-onu-reboot-${onuIdOf(r)}`} onClick={() => onuAction("reboot", onuIdOf(r), snOf(r))} className="p-1.5 rounded-lg border border-slate-700 text-cyan-300 hover:bg-slate-800 mr-1"><RotateCw className="w-3.5 h-3.5" /></button>
-                        <button title="Activar" data-testid={`olt-onu-activate-${onuIdOf(r)}`} onClick={() => onuAction("activate", onuIdOf(r), snOf(r))} className="p-1.5 rounded-lg border border-slate-700 text-emerald-300 hover:bg-emerald-900/20 mr-1"><CheckCircle2 className="w-3.5 h-3.5" /></button>
-                        <button title="Desactivar" onClick={() => onuAction("deactivate", onuIdOf(r), snOf(r))} className="p-1.5 rounded-lg border border-slate-700 text-amber-300 hover:bg-slate-800 mr-1"><Power className="w-3.5 h-3.5" /></button>
-                        <button title="Eliminar" onClick={() => onuAction("delete", onuIdOf(r), snOf(r))} className="p-1.5 rounded-lg border border-slate-700 text-rose-400 hover:bg-rose-900/30"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </td>
-                    )}
                   </tr>
                 ))}
               </tbody>

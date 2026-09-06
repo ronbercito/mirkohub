@@ -18,6 +18,8 @@ class NapBox(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(120), unique=True)
     location: Mapped[str] = mapped_column(String(255), default="")
+    zone_id: Mapped[str] = mapped_column(String(36), default="", index=True)
+    zone_name: Mapped[str] = mapped_column(String(120), default="")
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     ports: Mapped[int] = mapped_column(Integer, default=8)

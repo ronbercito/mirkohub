@@ -37,6 +37,7 @@ from app.routers.red.router import router as red_router
 from app.routers.red.olt_onu_summary import router as olt_onu_summary_router
 from app.routers.red.olt_onu_inventory import router as olt_onu_inventory_router
 from app.routers.red.olt_onu_v2 import router as olt_onu_v2_router
+from app.routers.red.olt_onu_descriptions import router as olt_onu_descriptions_router
 from app.routers.tareas.router import router as tareas_router
 from app.routers.tickets.router import router as tickets_router
 
@@ -65,6 +66,7 @@ api = APIRouter(prefix="/api")
 
 # IMPORTANTE: estas rutas específicas deben ir antes de red_router.
 api.include_router(olt_onu_v2_router, prefix="/routers", tags=["Red / OLT / ONUs v2"])
+api.include_router(olt_onu_descriptions_router, prefix="/routers", tags=["Red / OLT / ONUs v2"])
 api.include_router(olt_onu_summary_router, prefix="/routers", tags=["Red / OLT / ONUs"])
 api.include_router(olt_onu_inventory_router, prefix="/routers", tags=["Red / OLT / ONUs"])
 

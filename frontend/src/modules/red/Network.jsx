@@ -18,6 +18,7 @@ import RouterCard from "./components/RouterCard";
 import RouterForm from "./components/RouterForm";
 import RouterLiveTabs from "./components/RouterLiveTabs";
 import OltLiveTabs from "./components/OltLiveTabs";
+import EquipmentMapModal from "./components/EquipmentMapModal";
 
 const errMsg = (e, fallback) => e?.response?.data?.detail || fallback;
 
@@ -30,6 +31,7 @@ export default function Network() {
   const [busy, setBusy] = useState("");
   const [pingResult, setPingResult] = useState(null);
   const [formRouter, setFormRouter] = useState(null); // null = cerrado, {} = nuevo, {...} = editar
+  const [mapRouter, setMapRouter] = useState(null);
 
   const fetchRouters = useCallback(async () => {
     try {
@@ -127,7 +129,7 @@ export default function Network() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {routers.map((r) => (
-            <RouterCard key={r.id} router={r} selected={selected?.id === r.id} onSelect={() => { setSelected(r); setPingResult(null); }} />
+            <RouterCard key={r.id} router={r} selected={selected?.id === r.id} onSelect={() => { setSelected(r); setPingResult(null); }} onCoordinates={setMapRouter} />
           ))}
         </div>
       )}
@@ -213,6 +215,8 @@ export default function Network() {
           {selected.device_type === "mikrotik" ? <RouterLiveTabs router={selected} /> : <OltLiveTabs router={selected} />}
         </div>
       )}
+
+      {mapRouter && <EquipmentMapModal router={mapRouter} onClose={() => setMapRouter(null)} />}
 
       {formRouter !== null && (
         <RouterForm

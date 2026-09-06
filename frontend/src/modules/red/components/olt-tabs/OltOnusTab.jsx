@@ -1,26 +1,21 @@
 /**
  * Archivo: frontend/src/modules/red/components/olt-tabs/OltOnusTab.jsx
  * Pertenece a: Red > OLT > pestaña "ONUs".
- * Función: Orquesta exclusivamente la pestaña ONUs y enlaza la vista administrativa
- *          independiente de la lista de ONU.
- * Regla: Cada bloque, menú o submenú nuevo de ONUs debe vivir en su propio archivo hijo.
- *        No modificar Resumen, Puertos PON, Auto-find, Óptica ONU ni Consola desde aquí.
+ * Función: Orquesta exclusivamente la pestaña ONUs y enlaza el workspace v2 recreado.
+ * Regla: Este archivo NO contiene tablas ni parseo. Cada submenú de ONUs vive en
+ *        frontend/src/modules/red/components/olt-tabs/onu-v2/ y tiene su propio archivo.
  */
 import React from "react";
-import OnuAdminTable from "./onu/OnuAdminTable";
+import OnuWorkspace from "./onu-v2/OnuWorkspace";
 
-export default function OltOnusTab({ router, pon, res, onAction, onRefresh }) {
-  const rows = res?.rows || [];
-
+export default function OltOnusTab({ router, pon, onAction, refreshSeq, showRaw }) {
   return (
-    <div className="space-y-4 onu-tab-isolated">
-      <OnuAdminTable
-        router={router}
-        pon={pon}
-        rows={rows}
-        onAction={onAction}
-        onRefresh={onRefresh}
-      />
-    </div>
+    <OnuWorkspace
+      router={router}
+      pon={pon}
+      onAction={onAction}
+      refreshSeq={refreshSeq}
+      showRaw={showRaw}
+    />
   );
 }

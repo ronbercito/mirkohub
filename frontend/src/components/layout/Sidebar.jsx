@@ -34,7 +34,7 @@ const menuItems = [
 
 export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen }) {
   const { user, logout } = useAuth();
-  const groupForTab = (tab) => menuItems.find((item) => item.children?.some((child) => child.id === tab))?.id || null;
+  const groupForTab = (tab) => { const parent = menuItems.find((item) => item.id === tab || item.children?.some((child) => child.id === tab)); return parent?.children ? parent.id : null; };
   const [openGroup, setOpenGroup] = useState(() => groupForTab(activeTab));
 
   useEffect(() => {

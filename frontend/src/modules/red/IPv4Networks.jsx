@@ -64,6 +64,7 @@ export default function IPv4Networks() {
         toast.success("Red IPv4 registrada");
       }
       setEditing(null);
+      setForm(EMPTY);
       await load();
     } catch (error) {
       toast.error(error?.response?.data?.detail || "No se pudo guardar la red IPv4");

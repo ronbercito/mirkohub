@@ -190,6 +190,7 @@ export default function ClientDetail({ clientId, api, token, onClose }) {
           </div>)}
         </div>
       ) : <EmptyState title="Sin tickets registrados" description="Los tickets de soporte de este cliente se mostrarán en esta pestaña." />;
+    }
 
     if (activeTab === "messages") {
       return <EmptyState title="Sin comunicaciones registradas" description="Los correos y SMS enviados al cliente se centralizarán aquí cuando se registren desde el módulo de mensajería." />;

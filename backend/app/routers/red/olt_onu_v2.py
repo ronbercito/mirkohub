@@ -4,7 +4,7 @@ Pertenece a: Red > OLT > pestaña "ONUs".
 Función: Lee la lista real de ONUs del PON desde VSOL y combina estado, descripción,
          modelo, perfil, autorización y potencia sin usar el parser genérico antiguo.
 Regla: Este archivo es INDEPENDIENTE. No modificar Resumen, Puertos PON, Auto-find,
-       Óptica ONU ni Consola desde aquí. `show onu state` es la autoridad para ONU ID.
+       Óptica ONU ni Consola desde aquí. `show onu info` es la autoridad para ONU ID.
 
 Notas de esta VSOL V1600G1-B:
 - El Telnet deja restos de cursor como 12C/27C/41C/56C pegados a las columnas.
@@ -13,7 +13,8 @@ Notas de esta VSOL V1600G1-B:
 - Para evitar IDs falsos (101/111/121/128), los dígitos ONU+cursor se separan usando
   el orden real de las filas. Así `128C...` en la fila 12 se interpreta como ONU 12
   + cursor 8C, no como ONU 128.
-- `show onu info` se enlaza por Serial/AuthInfo y NO por su índice visual.
+- `show onu state` solo complementa el estado de las ONUs autorizadas.
+- La descripción se extrae de `onu <id> desc ...` con un solo `show running-config`.
 """
 
 import re
@@ -37,7 +38,10 @@ _BAD_RE = re.compile(
 _ONLINE_RE = re.compile(r"\b(?:working|online|registered|active|operation|syncmib|up)\b", re.I)
 _OFFLINE_RE = re.compile(r"\b(?:offline|los|down|inactive|deregistered|deactivated|disable|dying[-\s]?gasp)\b", re.I)
 _MODE_RE = re.compile(r"^(?:sn|loid|mac|password|sn-password)$", re.I)
-_CURSOR_RE = re.compile(r"\d{1,3}C", re.I)
+# Posiciones de columna observadas en la salida real de esta VSOL. No usar
+# `\d+C`: rompería valores legítimos como GPT-...V6 seguido de 27C, o el SN
+# MSTC8cb4fdc9 al confundir `8c` con un movimiento de cursor.
+_CURSOR_RE = re.compile(r"(?:12|27|41|56)C")
 _DBM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 
@@ -120,6 +124,10 @@ def _cursor_fields(rest: str) -> list[str]:
 
 def _status(*values: str) -> str:
     text = " ".join(str(v or "") for v in values)
+    if re.search(r"\bdying[-\s]?gasp\b", text, re.I):
+        return "dyinggasp"
+    if re.search(r"\bdeactivated\b", text, re.I):
+        return "deactivated"
     if _OFFLINE_RE.search(text):
         return "offline"
     if _ONLINE_RE.search(text):
@@ -233,14 +241,17 @@ def _clean_description(parts: list[str]) -> str:
     return "".join(values).strip()
 
 
-def _parse_info(raw: str, pon: int, state: dict[int, dict]) -> dict[int, dict]:
-    """Extrae Description | Model | Profile | Mode enlazando cada registro por Serial."""
+def _parse_info(raw: str, pon: int, state: Optional[dict[int, dict]] = None) -> dict[int, dict]:
+    """Parsea el inventario autorizado: Onuindex | Model | Profile | Mode | AuthInfo."""
     result: dict[int, dict] = {}
+    previous = 0
+    used: set[int] = set()
     for record in _info_records(raw, pon):
-        onu_id = _find_by_serial(record, state)
-        if onu_id is None:
+        found = _state_prefix(record, pon, previous, used)
+        if not found:
             continue
-        fields = _info_fields(record, pon, onu_id)
+        onu_id, rest = found
+        fields = _cursor_fields(rest)
         if not fields:
             continue
 
@@ -251,20 +262,46 @@ def _parse_info(raw: str, pon: int, state: dict[int, dict]) -> dict[int, dict]:
         if mode_idx is None or mode_idx < 2:
             continue
 
-        # Orden REAL de VSOL: [Status] Description | Model | Profile | Mode | Info
+        # Orden REAL confirmado: Model | Profile | Mode | AuthInfo.
         mode = fields[mode_idx]
         profile = fields[mode_idx - 1]
         model = fields[mode_idx - 2]
-        description = _clean_description(fields[:mode_idx - 2])
-        serial = state[onu_id].get("serial") or state[onu_id].get("auth_info") or ""
+        auth_info = "".join(fields[mode_idx + 1:]).strip()
 
         result[onu_id] = {
-            "description": description,
+            "pon_id": int(pon),
+            "onu_id": onu_id,
             "model": model,
             "profile": profile,
             "auth_mode": mode,
-            "auth_info": serial,
+            "auth_info": auth_info,
+            "serial": auth_info,
         }
+        used.add(onu_id)
+        previous = onu_id
+    return result
+
+
+def _parse_running_config(raw: str, pon: int, allowed: set[int]) -> dict[int, str]:
+    """Extrae solo `onu N desc TEXTO` del bloque del PON solicitado."""
+    result: dict[int, str] = {}
+    current_pon: Optional[int] = None
+    for original in (raw or "").splitlines():
+        line = _CURSOR_RE.sub(" ", _clean_line(original)).strip()
+        iface = re.search(r"\binterface\s+gpon\s+0/(\d+)\b", line, re.I)
+        if iface:
+            current_pon = int(iface.group(1))
+            continue
+        if current_pon is not None and current_pon != int(pon):
+            continue
+        match = re.search(r"\bonu\s+(\d{1,3})\s+desc\s+(.+?)\s*$", line, re.I)
+        if not match:
+            continue
+        onu_id = int(match.group(1))
+        if onu_id in allowed:
+            value = match.group(2).strip().strip('\"').strip("'")
+            if value:
+                result[onu_id] = value
     return result
 
 
@@ -306,7 +343,7 @@ def _counts(onus: list[dict]) -> dict:
     return {
         "total": len(onus),
         "online": sum(1 for row in onus if row.get("status") == "online"),
-        "offline": sum(1 for row in onus if row.get("status") == "offline"),
+        "offline": sum(1 for row in onus if row.get("status") in {"offline", "dyinggasp", "deactivated"}),
         "unknown": sum(1 for row in onus if row.get("status") == "unknown"),
     }
 
@@ -319,24 +356,28 @@ async def onus_v2(router_id: str, pon: int = 1, db: AsyncSession = Depends(get_d
 
     max_pon = int(getattr(olt, "pon_ports", 8) or 8)
     pon = max(1, min(int(pon or 1), max_pon))
-    state_raw = info_raw = optical_raw = ""
+    state_raw = info_raw = running_raw = ""
 
     try:
         async with olt_service.connect(olt) as cli:
-            state_raw = await cli.run_pon(pon, "show onu state", raise_on_error=False)
-            state = _parse_state(state_raw, pon) if _valid(state_raw) else {}
-            if not state:
+            # Inventario autorizado: esta es la única fuente que decide qué ONUs existen.
+            info_raw = await cli.run_pon(pon, "show onu info", raise_on_error=False)
+            info = _parse_info(info_raw, pon) if _valid(info_raw) else {}
+            if not info:
                 return {
                     "ok": False,
-                    "error": "No se pudieron interpretar las filas reales de `show onu state`.",
+                    "error": "No se pudieron interpretar las ONUs autorizadas de `show onu info`.",
                     "pon": pon,
                     "onus": [],
                     "counts": {"total": 0, "online": 0, "offline": 0, "unknown": 0},
-                    "raw": {"state": state_raw, "info": "", "optical": ""},
+                    "raw": {"state": "", "info": info_raw, "running_config": "", "optical": ""},
                 }
 
-            info_raw = await cli.run_pon(pon, "show onu info", raise_on_error=False)
-            optical_raw = await cli.run_pon(pon, "show pon rx_power", raise_on_error=False)
+            # Estado complementario: nunca agrega ONUs que no estén en `show onu info`.
+            state_raw = await cli.run_pon(pon, "show onu state", raise_on_error=False)
+            state = _parse_state(state_raw, pon) if _valid(state_raw) else {}
+            # Una sola consulta para todas las descripciones del PON.
+            running_raw = await cli.run_pon(pon, "show running-config", raise_on_error=False)
     except Exception as exc:
         return {
             "ok": False,
@@ -344,19 +385,20 @@ async def onus_v2(router_id: str, pon: int = 1, db: AsyncSession = Depends(get_d
             "pon": pon,
             "onus": [],
             "counts": {"total": 0, "online": 0, "offline": 0, "unknown": 0},
-            "raw": {"state": state_raw, "info": info_raw, "optical": optical_raw},
+            "raw": {"state": state_raw, "info": info_raw, "running_config": running_raw, "optical": ""},
         }
 
-    info = _parse_info(info_raw, pon, state) if _valid(info_raw) else {}
-    optical = _parse_optical(optical_raw, pon, set(state)) if _valid(optical_raw) else {}
+    descriptions = _parse_running_config(running_raw, pon, set(info)) if _valid(running_raw) else {}
 
     onus = []
-    for onu_id in sorted(state):
-        row = dict(state[onu_id])
-        for key, value in info.get(onu_id, {}).items():
-            if value:
-                row[key] = value
-        row.update(optical.get(onu_id, {}))
+    for onu_id in sorted(info):
+        row = dict(info[onu_id])
+        row.update(state.get(onu_id, {}))
+        row["description"] = descriptions.get(onu_id, "")
+        row.setdefault("status", "unknown")
+        row.setdefault("system_state", "")
+        row.setdefault("omcc_state", "")
+        row.setdefault("phase_state", "")
         onus.append(row)
 
     return {
@@ -366,9 +408,10 @@ async def onus_v2(router_id: str, pon: int = 1, db: AsyncSession = Depends(get_d
         "onus": onus,
         "counts": _counts(onus),
         "sources": {
-            "identity_and_state": "show onu state",
-            "description_model_profile": "show onu info",
-            "optical": "show pon rx_power" if optical else None,
+            "inventory_model_profile_auth": "show onu info",
+            "state": "show onu state",
+            "description": "show running-config: onu <id> desc",
+            "optical": None,
         },
-        "raw": {"state": state_raw, "info": info_raw, "optical": optical_raw},
+        "raw": {"state": state_raw, "info": info_raw, "running_config": running_raw, "optical": ""},
     }

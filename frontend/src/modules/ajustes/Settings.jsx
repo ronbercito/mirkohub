@@ -85,7 +85,7 @@ export default function Settings() {
     <div className="space-y-6 animate-in fade-in duration-200">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-          <SettingsIcon className="w-6 h-6 text-cyan-400" /> Ajustes Generales del ISP {settings.company_name || "FibraZ"}
+          <SettingsIcon className="w-6 h-6 text-cyan-400" /> Ajustes Generales del ISP {settings.company_name || "MikroHub"}
         </h2>
         <p className="text-xs text-slate-400 mt-0.5">
           Datos de facturación, cuentas de recaudación (Yape/BCP) y reglas de corte por mora

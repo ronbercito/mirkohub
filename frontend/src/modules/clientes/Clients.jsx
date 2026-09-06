@@ -22,6 +22,8 @@ export default function Clients({ onSelectClient }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const activePlans = plans.filter((plan) => plan.is_active);
+  const mikrotikRouters = routers.filter((router) => router.device_type === "mikrotik");
   
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -60,11 +62,13 @@ export default function Clients({ onSelectClient }) {
       setPlans(resPlans.data);
       setRouters(resRouters.data);
 
-      if (resPlans.data.length > 0 && !formData.plan_id) {
-        setFormData(prev => ({ ...prev, plan_id: resPlans.data[0].id }));
+      const firstActivePlan = resPlans.data.find((plan) => plan.is_active);
+      const firstMikrotik = resRouters.data.find((router) => router.device_type === "mikrotik");
+      if (firstActivePlan && !formData.plan_id) {
+        setFormData(prev => ({ ...prev, plan_id: firstActivePlan.id }));
       }
-      if (resRouters.data.length > 0 && !formData.router_id) {
-        setFormData(prev => ({ ...prev, router_id: resRouters.data[0].id }));
+      if (firstMikrotik && !formData.router_id) {
+        setFormData(prev => ({ ...prev, router_id: firstMikrotik.id }));
       }
     } catch (e) {
       console.error(e);
@@ -174,8 +178,8 @@ export default function Clients({ onSelectClient }) {
                 connection_type: "PPPoE",
                 pppoe_user: "",
                 pppoe_password: "",
-                plan_id: plans[0]?.id || "",
-                router_id: routers[0]?.id || "",
+                plan_id: activePlans[0]?.id || "",
+                router_id: mikrotikRouters[0]?.id || "",
                 nap_box: "",
                 optical_power_dbm: "",
                 status: "active"
@@ -493,11 +497,13 @@ export default function Clients({ onSelectClient }) {
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Plan de Internet Contratado *</label>
                   <select
+                    required
                     value={formData.plan_id}
                     onChange={(e) => setFormData({ ...formData, plan_id: e.target.value })}
                     className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100"
                   >
-                    {plans.map((p) => (
+                    <option value="" disabled>Selecciona un plan activo</option>
+                    {activePlans.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.name} — S/. {Number(p.price).toFixed(2)}/mes ({p.download_speed_mbps} Mbps)
                       </option>
@@ -508,11 +514,13 @@ export default function Clients({ onSelectClient }) {
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1">Router / Nodo MikroTik *</label>
                   <select
+                    required
                     value={formData.router_id}
                     onChange={(e) => setFormData({ ...formData, router_id: e.target.value })}
                     className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100"
                   >
-                    {routers.map((r) => (
+                    <option value="" disabled>Selecciona un MikroTik</option>
+                    {mikrotikRouters.map((r) => (
                       <option key={r.id} value={r.id}>
                         {r.name} ({r.ip_address})
                       </option>

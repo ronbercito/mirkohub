@@ -1,10 +1,8 @@
 /**
- * Vista gráfica y expandible para ONUs VSOL.
- *
- * Consume filas canónicas del backend (ONUIndex, Status, Description, Model,
- * Profile, Mode, Info, PON, ONU ID), cruza SN con clientes/planes y consulta
- * potencia del PON en bloque. El detalle pesado (VLAN/running-config/óptica
- * individual) se consulta sólo cuando el usuario abre una ONU.
+ * Vista gráfica/expandible de ONUs VSOL.
+ * Usa las filas canónicas del backend y, al abrir una ONU, muestra TODO lo
+ * devuelto por la OLT: detalle, configuración/VLAN, óptica, capability,
+ * GEMPORT y TCONT, además de acciones operativas.
  */
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -33,32 +31,37 @@ import { toast } from "sonner";
 const text = (v) => String(v ?? "").trim();
 const norm = (v) => text(v).toLowerCase().replace(/[^a-z0-9]/g, "");
 
+const cleanName = (v) => {
+  const s = text(v);
+  if (!s || s === "-" || /^none$/i.test(s)) return "";
+  return s.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+};
+
 const byKey = (obj, patterns) => {
   if (!obj) return "";
   for (const pattern of patterns) {
     const key = Object.keys(obj).find((k) => pattern.test(String(k)));
-    if (key) return text(obj[key]);
+    if (key) {
+      const value = obj[key];
+      if (value !== null && typeof value === "object") continue;
+      return text(value);
+    }
   }
   return "";
 };
 
-const cleanName = (v) => {
-  const value = text(v);
-  if (!value || value === "-" || /^none$/i.test(value)) return "";
-  return value.replace(/_/g, " ").replace(/\s+/g, " ").trim();
-};
-
 const parseIndex = (row, selectedPon) => {
   const raw = text(row?.ONUIndex || row?.["ONU ID"] || "");
-  const m = raw.match(/(?:GPON|EPON)?\s*0\/(\d+)\s*:\s*(\d+)/i);
-  if (m) return { pon: Number(m[1]), onuId: Number(m[2]), raw: raw.replace(/\s+/g, "") };
-
-  const explicitPon = text(row?.PON).match(/0\/(\d+)/);
-  const explicitId = Number(row?.["ONU ID"]);
+  const match = raw.match(/(?:GPON|EPON)?\s*0\/(\d+)\s*:\s*(\d+)/i);
+  if (match) {
+    return { pon: Number(match[1]), onuId: Number(match[2]), raw };
+  }
+  const p = text(row?.PON).match(/0\/(\d+)/);
+  const id = Number(row?.["ONU ID"] || 0);
   return {
-    pon: explicitPon ? Number(explicitPon[1]) : Number(selectedPon),
-    onuId: Number.isFinite(explicitId) ? explicitId : 0,
-    raw: raw || `GPON0/${selectedPon}:${explicitId || 0}`,
+    pon: p ? Number(p[1]) : Number(selectedPon),
+    onuId: Number.isFinite(id) ? id : 0,
+    raw: raw || `GPON0/${selectedPon}:${id || 0}`,
   };
 };
 
@@ -67,68 +70,41 @@ const parseDbm = (v) => {
   return m ? Number(m[0]) : null;
 };
 
-const opticalMap = (payload, selectedPon) => {
-  const map = new Map();
-  const rows = payload?.rows || [];
-
-  for (const row of rows) {
-    const idx = parseIndex(row, selectedPon);
-    if (!idx.onuId) continue;
-    map.set(idx.onuId, {
-      rx: byKey(row, [/rx\s*power/i, /rxpower/i, /^rx$/i]),
-      tx: byKey(row, [/tx\s*power/i, /txpower/i, /^tx$/i]),
-    });
-  }
-
-  for (const original of text(payload?.raw).replace(/\r/g, "").split("\n")) {
-    const line = original.trim();
-    if (!line) continue;
-
-    let onuId = 0;
-    let tail = line;
-
-    const indexed = line.match(/(?:GPON|EPON)?\s*0\/(\d+)\s*[:/]\s*(\d+)/i);
-    if (indexed) {
-      if (Number(indexed[1]) !== Number(selectedPon)) continue;
-      onuId = Number(indexed[2]);
-      tail = line.slice(indexed.index + indexed[0].length);
-    } else {
-      const first = line.match(/^(\d{1,3})\s+(.+)$/);
-      if (!first) continue;
-      onuId = Number(first[1]);
-      tail = first[2];
-    }
-
-    if (!onuId) continue;
-    const nums = (tail.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
-    const rx = nums.find((n) => n < 0);
-    const positive = nums.find((n) => n >= 0 && n <= 15);
-    const current = map.get(onuId) || {};
-    if (!current.rx && rx !== undefined) current.rx = `${rx} dBm`;
-    if (!current.tx && positive !== undefined) current.tx = `${positive} dBm`;
-    map.set(onuId, current);
-  }
-
-  return map;
-};
-
 const statusInfo = (value, rx = "") => {
-  const v = text(value).toLowerCase();
-  if (/online|active|up|working|registered/.test(v)) {
-    return { id: "online", label: "ONLINE", cls: "text-emerald-300 bg-emerald-950/40 border-emerald-800/60" };
+  const s = text(value).toLowerCase();
+  if (/online|active|registered|working|^up$/.test(s)) {
+    return {
+      id: "online",
+      label: "ONLINE",
+      cls: "text-emerald-300 bg-emerald-950/40 border-emerald-800/60",
+    };
   }
-  if (/offline|down|los|inactive|disable/.test(v)) {
-    return { id: "offline", label: "OFFLINE", cls: "text-rose-300 bg-rose-950/40 border-rose-800/60" };
+  if (/offline|inactive|los|disable|^down$/.test(s)) {
+    return {
+      id: "offline",
+      label: "OFFLINE",
+      cls: "text-rose-300 bg-rose-950/40 border-rose-800/60",
+    };
   }
   if (parseDbm(rx) !== null) {
-    return { id: "online", label: "ONLINE", cls: "text-emerald-300 bg-emerald-950/40 border-emerald-800/60" };
+    return {
+      id: "online",
+      label: "ONLINE",
+      cls: "text-emerald-300 bg-emerald-950/40 border-emerald-800/60",
+    };
   }
-  return { id: "unknown", label: "SIN ESTADO", cls: "text-slate-300 bg-slate-800/70 border-slate-700" };
+  return {
+    id: "unknown",
+    label: "SIN ESTADO",
+    cls: "text-slate-300 bg-slate-800/70 border-slate-700",
+  };
 };
 
-const rxUi = (value) => {
+const rxInfo = (value) => {
   const n = parseDbm(value);
-  if (n === null) return { pct: 0, label: "Sin lectura", cls: "text-slate-400", bar: "bg-slate-700" };
+  if (n === null) {
+    return { pct: 0, label: "Sin lectura", cls: "text-slate-400", bar: "bg-slate-700" };
+  }
   const pct = Math.max(4, Math.min(100, ((n + 35) / 27) * 100));
   if (n >= -25) return { pct, label: "Buena", cls: "text-emerald-300", bar: "bg-emerald-400" };
   if (n >= -28) return { pct, label: "Media", cls: "text-amber-300", bar: "bg-amber-400" };
@@ -140,10 +116,22 @@ const Info = ({ icon: Icon, label, value, mono = true, valueClass = "text-slate-
     <p className="text-[9px] uppercase tracking-wider text-slate-500 flex items-center gap-1">
       {Icon && <Icon className="w-3 h-3" />} {label}
     </p>
-    <p className={`mt-1 text-[11px] font-semibold break-words ${mono ? "font-mono" : ""} ${valueClass}`} title={text(value)}>
+    <p
+      className={`mt-1 text-[11px] font-semibold break-words ${mono ? "font-mono" : ""} ${valueClass}`}
+      title={text(value)}
+    >
       {value || "—"}
     </p>
     {sub ? <p className="mt-0.5 text-[9px] text-slate-600 truncate">{sub}</p> : null}
+  </div>
+);
+
+const Mini = ({ label, value, valueClass = "text-slate-100" }) => (
+  <div className="min-w-0">
+    <p className="text-[8px] uppercase tracking-wider text-slate-600">{label}</p>
+    <p className={`text-[10px] font-bold font-mono truncate ${valueClass}`} title={text(value)}>
+      {value || "—"}
+    </p>
   </div>
 );
 
@@ -161,51 +149,93 @@ const Summary = ({ icon: Icon, label, value, valueClass = "text-slate-100" }) =>
   </div>
 );
 
-export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAction, onRefresh }) {
+const ActionButton = ({ icon: Icon, label, className, onClick, disabled }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    className={`px-3 py-2 rounded-lg border text-[11px] font-semibold flex items-center gap-1.5 disabled:opacity-40 ${className}`}
+  >
+    <Icon className={`w-3.5 h-3.5 ${disabled ? "animate-pulse" : ""}`} />
+    {label}
+  </button>
+);
+
+const CliSections = ({ sections }) => {
+  const entries = Object.entries(sections || {}).filter(([, value]) => text(value));
+  if (!entries.length) return null;
+
+  const labels = {
+    AUTH: "Autorización / ONU Info",
+    DETAIL: "Detalle ONU",
+    DESCRIPTION: "Descripción",
+    "RUNNING CONFIG": "Configuración / VLAN / Servicio",
+    OPTICAL: "Óptica",
+    CAPABILITY: "Capacidades",
+    GEMPORT: "GEMPORT",
+    TCONT: "TCONT",
+  };
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] uppercase tracking-wider text-cyan-400">
+        Información completa devuelta por la OLT
+      </p>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+        {entries.map(([name, body]) => (
+          <details
+            key={name}
+            className="rounded-xl border border-slate-800 bg-black/25 overflow-hidden"
+            open={name === "RUNNING CONFIG" || name === "OPTICAL"}
+          >
+            <summary className="cursor-pointer select-none px-3 py-2 text-[10px] font-semibold text-slate-300 hover:bg-slate-900/70">
+              {labels[name] || name}
+            </summary>
+            <pre className="border-t border-slate-800 p-3 text-[10px] text-slate-300 font-mono whitespace-pre-wrap break-words max-h-64 overflow-auto">
+              {text(body)}
+            </pre>
+          </details>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export default function OnuCardsPanelV2({ router, pon, rows = [], onAction, onRefresh }) {
   const { API, token } = useAuth();
   const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
 
   const [clients, setClients] = useState([]);
   const [plans, setPlans] = useState([]);
-  const [optical, setOptical] = useState(new Map());
-  const [loadingExtra, setLoadingExtra] = useState(false);
-  const [extraTick, setExtraTick] = useState(0);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [expanded, setExpanded] = useState({});
   const [details, setDetails] = useState({});
   const [detailLoading, setDetailLoading] = useState({});
   const [actionBusy, setActionBusy] = useState("");
+  const [loadingExtra, setLoadingExtra] = useState(false);
 
   useEffect(() => {
     let alive = true;
-
-    const loadExtras = async () => {
+    const load = async () => {
       setLoadingExtra(true);
       try {
-        const [clientsRes, plansRes, opticalRes] = await Promise.all([
+        const [clientsRes, plansRes] = await Promise.all([
           axios.get(`${API}/clients`, { headers }),
           axios.get(`${API}/plans`, { headers }),
-          axios.get(`${API}/routers/${router.id}/olt/onu_optical?pon=${pon}`, { headers }),
         ]);
-
         if (!alive) return;
         setClients(Array.isArray(clientsRes.data) ? clientsRes.data : []);
         setPlans(Array.isArray(plansRes.data) ? plansRes.data : []);
-        setOptical(opticalRes.data?.ok ? opticalMap(opticalRes.data, pon) : new Map());
       } catch (e) {
-        if (alive) {
-          console.warn("No se pudo cargar información complementaria de ONUs", e);
-          setOptical(new Map());
-        }
+        console.warn("No se pudo cargar clientes/planes para enriquecer ONUs", e);
       } finally {
         if (alive) setLoadingExtra(false);
       }
     };
-
-    loadExtras();
+    load();
     return () => { alive = false; };
-  }, [API, headers, router.id, pon, extraTick]);
+  }, [API, headers]);
 
   useEffect(() => {
     setExpanded({});
@@ -217,14 +247,12 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
 
   const cards = useMemo(() => rows.map((row, index) => {
     const idx = parseIndex(row, pon);
-    const opt = optical.get(idx.onuId) || {};
     const serial = text(row.Info || byKey(row, [/authinfo/i, /^sn$/i, /serial/i]));
     const serialNorm = norm(serial);
 
     const client = clients.find((c) => {
-      const clientSn = norm(c.onu_sn);
-      if (!clientSn || !serialNorm) return false;
-      return clientSn === serialNorm || clientSn.includes(serialNorm) || serialNorm.includes(clientSn);
+      const sn = norm(c.onu_sn);
+      return sn && serialNorm && (sn === serialNorm || sn.includes(serialNorm) || serialNorm.includes(sn));
     }) || null;
 
     const plan = client ? planById.get(client.plan_id) : null;
@@ -232,10 +260,10 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
     const up = plan?.upload_speed_mbps;
     const speed = down || up ? `${down || 0}↓ / ${up || 0}↑ Mbps` : "";
 
-    const description = cleanName(row.Description);
-    const rx = opt.rx || byKey(row, [/rx\s*power/i, /rxpower/i]);
-    const tx = opt.tx || byKey(row, [/tx\s*power/i, /txpower/i]);
+    const rx = text(row.RxPower || byKey(row, [/rx\s*power/i, /rxpower/i]));
+    const tx = text(row.TxPower || byKey(row, [/tx\s*power/i, /txpower/i]));
     const status = statusInfo(row.Status, rx);
+    const description = cleanName(row.Description);
 
     return {
       key: `${idx.pon}-${idx.onuId || index}`,
@@ -245,15 +273,15 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
       client,
       plan,
       speed,
+      rx,
+      tx,
+      status,
       description,
       model: text(row.Model),
       profile: text(row.Profile),
       mode: text(row.Mode),
-      rx,
-      tx,
-      status,
     };
-  }), [rows, pon, optical, clients, planById]);
+  }), [rows, pon, clients, planById]);
 
   const counts = useMemo(() => ({
     total: cards.length,
@@ -283,23 +311,24 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
     });
   }, [cards, search, filter]);
 
-  const loadDetail = async (card) => {
-    if (!card.idx.onuId || details[card.key]?.loaded) return;
+  const loadDetail = async (card, force = false) => {
+    if (!card.idx.onuId) return;
+    if (!force && details[card.key]?.loaded) return;
 
     setDetailLoading((prev) => ({ ...prev, [card.key]: true }));
     try {
-      const r = await axios.get(
-        `${API}/routers/${router.id}/olt/onu_detail?pon=${pon}&onu=${card.idx.onuId}`,
+      const response = await axios.get(
+        `${API}/routers/${router.id}/olt/onu_detail?pon=${card.idx.pon}&onu=${card.idx.onuId}`,
         { headers }
       );
-      if (!r.data?.ok) throw new Error(r.data?.error || "Sin detalle");
+      if (!response.data?.ok) throw new Error(response.data?.error || "Sin detalle");
 
       setDetails((prev) => ({
         ...prev,
         [card.key]: {
           loaded: true,
-          info: r.data.info || {},
-          raw: r.data.raw || "",
+          info: response.data.info || {},
+          raw: response.data.raw || "",
         },
       }));
     } catch (e) {
@@ -309,30 +338,30 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
     }
   };
 
-  const toggleCard = async (card) => {
+  const toggle = async (card) => {
     const next = !expanded[card.key];
     setExpanded((prev) => ({ ...prev, [card.key]: next }));
     if (next) await loadDetail(card);
   };
 
   const refreshAll = async () => {
-    setExtraTick((n) => n + 1);
+    setDetails({});
     if (onRefresh) await onRefresh();
   };
 
   const runAction = async (action, card) => {
-    const busyKey = `${action}-${card.key}`;
-    setActionBusy(busyKey);
+    const busy = `${action}-${card.key}`;
+    setActionBusy(busy);
     try {
       await onAction(action, card.idx.onuId, card.serial);
-      setExtraTick((n) => n + 1);
+      setDetails((prev) => ({ ...prev, [card.key]: undefined }));
     } finally {
       setActionBusy("");
     }
   };
 
   return (
-    <div className="space-y-4" data-testid="onu-cards-panel-v2">
+    <div className="space-y-4" data-testid="onu-cards-panel-v3">
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Summary icon={Radio} label="ONUs en este PON" value={counts.total} />
         <Summary icon={Wifi} label="Online" value={counts.online} valueClass="text-emerald-300" />
@@ -341,7 +370,7 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
       </div>
 
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/50 p-3">
-        <div className="relative flex-1 max-w-xl">
+        <div className="relative flex-1 max-w-2xl">
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
           <input
             value={search}
@@ -370,8 +399,9 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
             </button>
           ))}
           <button
+            type="button"
             onClick={refreshAll}
-            title="Actualizar ONUs y potencia"
+            title="Actualizar inventario ONU"
             className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loadingExtra ? "animate-spin text-cyan-400" : ""}`} />
@@ -385,22 +415,30 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
             const open = Boolean(expanded[card.key]);
             const detail = details[card.key] || {};
             const info = detail.info || {};
+            const sections = info._sections && typeof info._sections === "object" ? info._sections : {};
 
             const detailName = cleanName(byKey(info, [/description/i, /^name$/i]));
             const shownName = detailName || card.description || card.client?.full_name || `ONU ${card.idx.onuId}`;
-            const shownSerial = byKey(info, [/^sn$/i, /serial/i, /auth/i]) || card.serial;
+            const shownSerial = byKey(info, [/^sn$/i, /serial/i, /auth\s*info/i, /authinfo/i]) || card.serial;
             const shownModel = byKey(info, [/model/i, /product/i, /^type$/i]) || card.model;
             const shownVlan = byKey(info, [/^vlan$/i, /uservlan/i, /cvlan/i, /def_vlan/i]);
-            const detailRx = byKey(info, [/rx\s*power/i, /rxpower/i, /^rx$/i]);
-            const detailTx = byKey(info, [/tx\s*power/i, /txpower/i, /^tx$/i]);
-            const shownRx = detailRx || card.rx;
-            const shownTx = detailTx || card.tx;
-            const detailStatus = byKey(info, [/^status$/i, /^state$/i]);
-            const st = statusInfo(detailStatus || card.row.Status, shownRx);
-            const rx = rxUi(shownRx);
+            const shownRx = byKey(info, [/rx\s*power/i, /rxpower/i, /^rx$/i]) || card.rx;
+            const shownTx = byKey(info, [/tx\s*power/i, /txpower/i, /^tx$/i]) || card.tx;
+            const detailStatus = byKey(info, [/^status$/i, /^state$/i, /run\s*state/i]);
+            const status = statusInfo(detailStatus || card.row.Status, shownRx);
+            const rx = rxInfo(shownRx);
 
             const planName = card.plan?.name || card.client?.plan_name || "";
-            const speedLabel = card.speed || (planName ? planName : "No asociado");
+            const trafficUp = byKey(info, [/upstream profile/i, /upstream/i]);
+            const trafficDown = byKey(info, [/downstream profile/i, /downstream/i]);
+            const speedLabel = card.speed
+              || (planName ? planName : "")
+              || ([trafficDown, trafficUp].filter(Boolean).join(" / "))
+              || "No asociado";
+
+            const scalarInfo = Object.entries(info).filter(
+              ([key, value]) => key !== "_sections" && (value === null || typeof value !== "object")
+            );
 
             return (
               <div
@@ -411,7 +449,7 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
               >
                 <button
                   type="button"
-                  onClick={() => toggleCard(card)}
+                  onClick={() => toggle(card)}
                   className="w-full text-left p-4 bg-slate-900/40 hover:bg-slate-900/65 transition"
                 >
                   <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
@@ -425,9 +463,9 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
                         </h4>
                         <p className="text-[11px] text-slate-400 mt-0.5 truncate">
                           {card.description
-                            ? "Nombre configurado directamente en la OLT"
+                            ? "Nombre configurado en la OLT"
                             : card.client
-                              ? "Cliente vinculado por número de serie"
+                              ? "Cliente vinculado por SN"
                               : "Sin descripción detectada"}
                         </p>
                       </div>
@@ -439,8 +477,8 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
                       <Mini label="Modelo" value={shownModel || "—"} />
                       <Mini label="RX" value={shownRx || "—"} valueClass={rx.cls} />
                       <div className="flex items-center justify-end gap-2">
-                        <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${st.cls}`}>
-                          {st.label}
+                        <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${status.cls}`}>
+                          {status.label}
                         </span>
                         {open ? <ChevronUp className="w-4 h-4 text-cyan-300" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                       </div>
@@ -460,13 +498,9 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                      <Info icon={Activity} label="Potencia RX" value={shownRx || "—"} valueClass={rx.cls} />
+                      <Info icon={Gauge} label="Potencia RX" value={shownRx || "—"} valueClass={rx.cls} />
                       <Info icon={Radio} label="Potencia TX" value={shownTx || "—"} />
-                      <Info
-                        icon={Layers}
-                        label="VLAN"
-                        value={detailLoading[card.key] ? "Consultando..." : shownVlan || "No devuelta por CLI"}
-                      />
+                      <Info icon={Layers} label="VLAN" value={detailLoading[card.key] ? "Consultando..." : shownVlan || "No detectada"} />
                       <Info icon={Wifi} label="Velocidad / Plan" value={speedLabel} mono={false} />
                     </div>
 
@@ -499,7 +533,7 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
                     </div>
 
                     {card.client && (
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                         <Info label="Plan" value={planName || "—"} mono={false} />
                         <Info label="Velocidad" value={card.speed || "—"} />
                         <Info label="IP cliente" value={card.client.ip_address || "—"} />
@@ -508,69 +542,75 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
                     )}
 
                     <div className="rounded-xl border border-slate-800 bg-black/20 p-3">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <p className="text-[10px] uppercase tracking-wider text-cyan-400">
-                          Información detallada de la OLT
-                        </p>
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-wider text-cyan-400">
+                            Datos técnicos detectados
+                          </p>
+                          <p className="text-[9px] text-slate-600 mt-0.5">
+                            Se consultan al desplegar la ONU para no saturar el Telnet.
+                          </p>
+                        </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setDetails((prev) => ({ ...prev, [card.key]: undefined }));
-                            loadDetail(card);
-                          }}
+                          onClick={() => loadDetail(card, true)}
                           disabled={detailLoading[card.key]}
-                          className="px-2 py-1 rounded-lg border border-slate-700 text-[10px] text-slate-300 hover:bg-slate-800"
+                          className="px-2 py-1 rounded-lg border border-slate-700 text-[10px] text-slate-300 hover:bg-slate-800 disabled:opacity-40"
                         >
                           {detailLoading[card.key] ? "Consultando..." : "Actualizar detalle"}
                         </button>
                       </div>
 
-                      {detailLoading[card.key] ? (
-                        <p className="text-[11px] text-slate-500">Consultando descripción, configuración, VLAN y óptica...</p>
-                      ) : Object.keys(info).length ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-x-4 gap-y-1.5">
-                          {Object.entries(info).map(([k, v]) => (
-                            <div key={k} className="flex items-start justify-between gap-3 text-[10px] border-b border-slate-800/50 pb-1">
-                              <span className="text-slate-500">{k}</span>
-                              <span className="text-slate-200 font-mono text-right break-all">{text(v)}</span>
+                      {detailLoading[card.key] && !detail.loaded ? (
+                        <p className="text-[11px] text-slate-500">
+                          Consultando autorización, detalle, VLAN, óptica, capability, GEMPORT y TCONT...
+                        </p>
+                      ) : scalarInfo.length ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                          {scalarInfo.map(([key, value]) => (
+                            <div key={key} className="rounded-lg border border-slate-800/70 bg-slate-950/50 px-2.5 py-2">
+                              <p className="text-[9px] uppercase tracking-wider text-slate-600">{key}</p>
+                              <p className="text-[10px] text-slate-200 font-mono mt-1 break-all">{text(value) || "—"}</p>
                             </div>
                           ))}
                         </div>
                       ) : (
                         <p className="text-[11px] text-slate-500">
-                          La OLT todavía no devolvió detalle para esta ONU.
+                          La OLT todavía no devolvió campos estructurados para esta ONU.
                         </p>
                       )}
                     </div>
+
+                    <CliSections sections={sections} />
 
                     <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/70">
                       <span className="text-[10px] uppercase tracking-wider text-slate-500 mr-1">Acciones</span>
                       <ActionButton
                         label="Reiniciar"
                         icon={RotateCw}
-                        cls="text-cyan-300 border-cyan-800/50 hover:bg-cyan-950/30"
-                        busy={actionBusy === `reboot-${card.key}`}
+                        className="text-cyan-300 border-cyan-800/50 hover:bg-cyan-950/30"
+                        disabled={actionBusy === `reboot-${card.key}` || !card.idx.onuId}
                         onClick={() => runAction("reboot", card)}
                       />
                       <ActionButton
                         label="Activar"
                         icon={CheckCircle2}
-                        cls="text-emerald-300 border-emerald-800/50 hover:bg-emerald-950/30"
-                        busy={actionBusy === `activate-${card.key}`}
+                        className="text-emerald-300 border-emerald-800/50 hover:bg-emerald-950/30"
+                        disabled={actionBusy === `activate-${card.key}` || !card.idx.onuId}
                         onClick={() => runAction("activate", card)}
                       />
                       <ActionButton
                         label="Desactivar"
                         icon={Power}
-                        cls="text-amber-300 border-amber-800/50 hover:bg-amber-950/20"
-                        busy={actionBusy === `deactivate-${card.key}`}
+                        className="text-amber-300 border-amber-800/50 hover:bg-amber-950/20"
+                        disabled={actionBusy === `deactivate-${card.key}` || !card.idx.onuId}
                         onClick={() => runAction("deactivate", card)}
                       />
                       <ActionButton
                         label="Eliminar"
                         icon={Trash2}
-                        cls="text-rose-300 border-rose-800/50 hover:bg-rose-950/30"
-                        busy={actionBusy === `delete-${card.key}`}
+                        className="text-rose-300 border-rose-800/50 hover:bg-rose-950/30"
+                        disabled={actionBusy === `delete-${card.key}` || !card.idx.onuId}
                         onClick={() => runAction("delete", card)}
                       />
                     </div>
@@ -588,24 +628,3 @@ export default function OnuCardsPanelV2({ router, pon, rows = [], raw = "", onAc
     </div>
   );
 }
-
-const Mini = ({ label, value, valueClass = "text-slate-100" }) => (
-  <div className="min-w-0">
-    <p className="text-[8px] uppercase tracking-wider text-slate-600">{label}</p>
-    <p className={`text-[10px] font-mono font-semibold truncate ${valueClass}`} title={text(value)}>
-      {value || "—"}
-    </p>
-  </div>
-);
-
-const ActionButton = ({ label, icon: Icon, cls, busy, onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={busy}
-    className={`px-3 py-1.5 rounded-lg border text-[11px] font-semibold flex items-center gap-1.5 disabled:opacity-40 ${cls}`}
-  >
-    <Icon className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`} />
-    {label}
-  </button>
-);

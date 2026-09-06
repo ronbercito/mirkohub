@@ -12,6 +12,7 @@ from app.core.database import Base
 
 DEFAULT_SETTINGS = {
     "company_name": "",
+    "logo_data": "",
     "ruc": "",
     "phone": "",
     "email": "",

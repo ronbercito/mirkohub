@@ -5,6 +5,8 @@ Función: API de Cajas NAP (/api/nap-boxes): administra el inventario físico y 
 Alcance: no ejecuta comandos en OLT o MikroTik.
 Trabaja con: models/nap_box.py, models/client.py, frontend/modules/red/NapBoxes.jsx.
 """
+from hashlib import sha256
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -54,7 +56,7 @@ async def create_nap_box(data: NapBoxIn, db: AsyncSession = Depends(get_db)):
     if not zone:
         raise HTTPException(status_code=422, detail="La zona seleccionada ya no existe.")
     display_name = data.name.strip()
-    internal_name = f"{zone.id}:{display_name}".lower()
+    internal_name = sha256(f"{zone.id}:{display_name.lower()}".encode()).hexdigest()
     exists = await db.scalar(select(NapBox.id).where(func.lower(NapBox.name) == internal_name))
     if exists:
         raise HTTPException(status_code=422, detail="Ya existe una caja NAP con ese nombre en esta zona.")

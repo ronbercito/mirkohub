@@ -8,12 +8,18 @@ Regla: Este archivo es INDEPENDIENTE. No usa parse_table() ni el inventario anti
 Formato REAL observado en esta VSOL V1600G1-B:
     GPON0/1:112Cenable27Cenable41Cworking56CMSTC8cb4fdc9
 
-Los textos 12C/27C/41C/56C son restos de secuencias ANSI de posicionamiento de cursor
-que el cliente Telnet actual dejó en la salida. En esa fila significan:
+Los textos 12C/27C/41C/56C son restos de secuencias ANSI de posicionamiento de cursor.
+En esa fila significan:
     GPON0/1:1 | enable | enable | working | MSTC8cb4fdc9
 
-Este módulo corrige SOLO esa salida para ONUs, sin tocar el limpiador CLI general ni
-las pestañas Resumen, Puertos PON, Auto-find, Óptica ONU o Consola.
+IMPORTANTE PARA `show onu info`:
+- El primer marcador de cursor puede variar y puede quedar pegado al ONU ID.
+- Por eso Description/Model/Profile/Mode NO se enlazan usando el índice corruptible.
+- Se enlazan por el Serial/AuthInfo que ya fue obtenido de `show onu state`.
+  Esto evita volver a generar IDs falsos y permite recuperar las demás columnas.
+
+Este módulo corrige SOLO ONUs v2. No toca Resumen, Puertos PON, Auto-find,
+Óptica ONU, Consola ni el limpiador Telnet general.
 """
 
 import re
@@ -40,6 +46,7 @@ _ONLINE_RE = re.compile(r"\b(?:working|online|registered|active|operation|syncmi
 _OFFLINE_RE = re.compile(r"\b(?:offline|los|down|inactive|deregistered|dying[-\s]?gasp)\b", re.I)
 _MODE_RE = re.compile(r"^(?:sn|loid|mac|password|sn-password)$", re.I)
 _DBM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+_CURSOR_RE = re.compile(r"\d{1,3}C", re.I)
 
 
 def _valid(raw: str) -> bool:
@@ -57,8 +64,12 @@ def _clean_line(line: str) -> str:
     return value.strip()
 
 
+def _norm_token(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9]", "", str(value or "")).lower()
+
+
 def _path_prefix(line: str, pon: int) -> Optional[tuple[int, str]]:
-    """Extrae ONU ID y resto de una fila con índice GPON0/PON:ONU."""
+    """Extrae ONU ID y resto de una fila de `show onu state`."""
     text = _clean_line(line)
 
     # Caso limpio con separador visible después del ID.
@@ -72,8 +83,7 @@ def _path_prefix(line: str, pon: int) -> Optional[tuple[int, str]]:
         if 1 <= onu_id <= 128:
             return onu_id, m.group(2).strip()
 
-    # Formato REAL visto en esta OLT. El primer salto de cursor es 12C.
-    # Ejemplo: GPON0/1:112Cenable...  => ONU 1 + 12C.
+    # Formato real de show onu state en esta OLT: ONU ID + 12C.
     marker = re.match(
         rf"^(?:GPON|EPON)0/{int(pon)}:(\d{{1,3}})12C(.*)$",
         text,
@@ -91,7 +101,7 @@ def _path_prefix(line: str, pon: int) -> Optional[tuple[int, str]]:
         if 1 <= onu_id <= 128:
             return onu_id, m.group(2).strip()
 
-    # Dentro de interface gpon 0/X algunos firmwares usan solo ONU ID como primera columna.
+    # Dentro de interface gpon 0/X algunos firmwares usan solo ONU ID.
     m = re.match(r"^(\d{1,3})\s+(.+)$", text)
     if m:
         onu_id = int(m.group(1))
@@ -102,24 +112,40 @@ def _path_prefix(line: str, pon: int) -> Optional[tuple[int, str]]:
 
 
 def _cursor_fields(rest: str) -> list[str]:
-    """
-    Convierte restos como `12Cenable27Cenable41Cworking56CSERIAL` en campos.
-    No interpreta números normales del contenido; solo marcadores NNC delante de columnas.
-    """
+    """Separa columnas cuando quedaron marcadores ANSI NNC dentro del texto."""
     value = (rest or "").strip()
     if not value:
         return []
 
-    # El primer 12C pertenece al inicio de la primera columna y se elimina.
     value = re.sub(r"^12C", "", value, count=1, flags=re.I)
 
-    if re.search(r"\d{1,3}C", value):
-        parts = [part.strip() for part in re.split(r"\d{1,3}C", value) if part.strip()]
+    if _CURSOR_RE.search(value):
+        parts = [part.strip() for part in _CURSOR_RE.split(value) if part.strip()]
         if parts:
             return parts
 
-    # Tabla normal con espacios.
-    return [part for part in re.split(r"\s{2,}|\|", value) if part.strip()]
+    return [part.strip() for part in re.split(r"\s{2,}|\|", value) if part.strip()]
+
+
+def _all_cursor_columns(line: str) -> list[str]:
+    """
+    Separa una fila completa sin intentar interpretar el ONU ID.
+
+    Esto es especialmente útil para `show onu info`, porque el primer marcador ANSI
+    puede quedar pegado al índice y hacer que un ONU 1 parezca 111. El enlace de esa
+    fila se hará después por Serial/AuthInfo, no por el índice textual.
+    """
+    text = _clean_line(line)
+    if not text or not _CURSOR_RE.search(text):
+        return []
+
+    parts = [part.strip() for part in _CURSOR_RE.split(text) if part.strip()]
+
+    # El primer fragmento suele contener GPON0/PON:ONU. No es una columna de datos.
+    if parts and re.search(r"(?:GPON|EPON)\s*0/\d+:\d+", parts[0], re.I):
+        parts = parts[1:]
+
+    return parts
 
 
 def _status_from(*values: str) -> str:
@@ -143,7 +169,6 @@ def _parse_state(raw: str, pon: int) -> dict[int, dict]:
         onu_id, rest = found
         fields = _cursor_fields(rest)
         if len(fields) < 3:
-            # Fallback por palabras si la tabla vino con espacios simples.
             tokens = rest.split()
             if len(tokens) < 3:
                 continue
@@ -161,7 +186,6 @@ def _parse_state(raw: str, pon: int) -> dict[int, dict]:
             "omcc_state": omcc,
             "phase_state": phase,
             "status": _status_from(phase, admin, omcc),
-            # show onu state de esta VSOL ya entrega Serial Number en la última columna.
             "serial": serial,
             "auth_info": serial,
         }
@@ -169,48 +193,126 @@ def _parse_state(raw: str, pon: int) -> dict[int, dict]:
     return result
 
 
-def _parse_info(raw: str, pon: int, allowed_ids: set[int]) -> dict[int, dict]:
-    """Complementa Description/Model/Profile/Mode/AuthInfo sin alterar ONU ID."""
+def _find_onu_by_serial(line: str, state: dict[int, dict]) -> Optional[int]:
+    """Relaciona una fila de show onu info con una ONU usando Serial/AuthInfo."""
+    line_norm = _norm_token(line)
+    if not line_norm:
+        return None
+
+    # Seriales más largos primero para evitar coincidencias parciales.
+    candidates = []
+    for onu_id, row in state.items():
+        serial = _norm_token(row.get("serial") or row.get("auth_info") or "")
+        if len(serial) >= 4:
+            candidates.append((len(serial), onu_id, serial))
+
+    for _, onu_id, serial in sorted(candidates, reverse=True):
+        if serial in line_norm:
+            return onu_id
+
+    return None
+
+
+def _parse_info(raw: str, pon: int, state: dict[int, dict]) -> dict[int, dict]:
+    """
+    Complementa Description/Model/Profile/Mode/AuthInfo SIN confiar en el índice de
+    `show onu info`. Cada fila se relaciona por Serial/AuthInfo proveniente de state.
+    """
     result: dict[int, dict] = {}
+    allowed_ids = set(state)
 
     for original in (raw or "").splitlines():
-        found = _path_prefix(original, pon)
-        if not found:
-            continue
-        onu_id, rest = found
-        if onu_id not in allowed_ids:
+        line = _clean_line(original)
+        if not line:
             continue
 
-        fields = _cursor_fields(rest)
-        if not fields:
+        # Método principal: Serial/AuthInfo ya confirmado por show onu state.
+        onu_id = _find_onu_by_serial(line, state)
+
+        # Fallback solo para formatos limpios; nunca acepta un ID que no exista en state.
+        rest = ""
+        if onu_id is None:
+            found = _path_prefix(line, pon)
+            if found and found[0] in allowed_ids:
+                onu_id, rest = found
+
+        if onu_id is None or onu_id not in allowed_ids:
             continue
+
+        serial = state[onu_id].get("serial") or state[onu_id].get("auth_info") or ""
+
+        # Primero intenta reconstruir columnas por marcadores ANSI.
+        fields = _all_cursor_columns(line)
 
         description = model = profile = mode = auth_info = info_status = ""
 
-        # Forma típica VSOL: Status | Description | Model | Profile | Mode | Info
-        if len(fields) >= 6:
-            info_status, description, model, profile, mode, auth_info = fields[:6]
-        elif len(fields) == 5:
-            description, model, profile, mode, auth_info = fields
-        elif len(fields) == 4:
-            model, profile, mode, auth_info = fields
-        else:
-            # Si no hay columnas de cursor, intenta ubicar Mode desde la derecha.
-            tokens = rest.split()
+        if fields:
+            # Localiza la columna que contiene el serial de esta ONU.
+            serial_norm = _norm_token(serial)
+            serial_pos = None
+            if serial_norm:
+                for i, field in enumerate(fields):
+                    if serial_norm in _norm_token(field):
+                        serial_pos = i
+                        break
+
+            # VSOL típico desde la derecha:
+            # Status | Description | Model | Profile | Mode | Info
+            if serial_pos is not None:
+                auth_info = serial
+                before = fields[:serial_pos]
+
+                if before:
+                    mode = before[-1] if len(before) >= 1 else ""
+                    profile = before[-2] if len(before) >= 2 else ""
+                    model = before[-3] if len(before) >= 3 else ""
+                    description = before[-4] if len(before) >= 4 else ""
+                    info_status = before[-5] if len(before) >= 5 else ""
+
+                    # Si no encontramos un Mode reconocido, intenta buscar Sn/Loid/Mac.
+                    if mode and not _MODE_RE.match(mode):
+                        mode_idx = next(
+                            (i for i in range(len(before) - 1, -1, -1) if _MODE_RE.match(before[i])),
+                            None,
+                        )
+                        if mode_idx is not None:
+                            mode = before[mode_idx]
+                            profile = before[mode_idx - 1] if mode_idx >= 1 else profile
+                            model = before[mode_idx - 2] if mode_idx >= 2 else model
+                            description = before[mode_idx - 3] if mode_idx >= 3 else description
+                            info_status = before[mode_idx - 4] if mode_idx >= 4 else info_status
+
+            elif len(fields) >= 6:
+                # Último recurso si el serial sufrió alguna variación visual.
+                info_status, description, model, profile, mode, auth_info = fields[-6:]
+
+        # Fallback para salida realmente separada por espacios.
+        if not any((description, model, profile, mode)):
+            if not rest:
+                found = _path_prefix(line, pon)
+                rest = found[1] if found and found[0] == onu_id else ""
+
+            tokens = rest.split() if rest else line.split()
             mode_idx = next((i for i, token in enumerate(tokens) if _MODE_RE.match(token)), None)
             if mode_idx is not None:
                 mode = tokens[mode_idx]
-                auth_info = tokens[mode_idx + 1] if mode_idx + 1 < len(tokens) else ""
+                auth_info = serial or (tokens[mode_idx + 1] if mode_idx + 1 < len(tokens) else "")
                 profile = tokens[mode_idx - 1] if mode_idx >= 1 else ""
                 model = tokens[mode_idx - 2] if mode_idx >= 2 else ""
-                description = " ".join(tokens[:max(0, mode_idx - 2)])
+                prefix = tokens[:max(0, mode_idx - 2)]
+                if prefix:
+                    if _ONLINE_RE.search(prefix[0]) or _OFFLINE_RE.search(prefix[0]):
+                        info_status = prefix[0]
+                        description = " ".join(prefix[1:])
+                    else:
+                        description = " ".join(prefix)
 
         result[onu_id] = {
             "description": description,
             "model": model,
             "profile": profile,
             "auth_mode": mode,
-            "auth_info": auth_info,
+            "auth_info": auth_info or serial,
             "info_status": info_status,
         }
 
@@ -229,8 +331,7 @@ def _parse_optical(raw: str, pon: int, allowed_ids: set[int]) -> dict[int, dict]
         if onu_id not in allowed_ids:
             continue
 
-        # Quita marcadores de cursor antes de extraer números.
-        clean = re.sub(r"\d{1,3}C", " ", rest)
+        clean = _CURSOR_RE.sub(" ", rest)
         values = []
         for match in _DBM_RE.finditer(clean):
             try:
@@ -277,7 +378,7 @@ async def onus_v2(
 
     try:
         async with olt_service.connect(olt) as cli:
-            # 1) Primero estado: de aquí salen los ONU ID reales.
+            # 1) Estado: de aquí salen los ONU ID reales y el Serial/AuthInfo.
             state_raw = await cli.run_pon(pon, "show onu state", raise_on_error=False)
             commands.append("show onu state")
             state = _parse_state(state_raw, pon) if _valid(state_raw) else {}
@@ -295,7 +396,7 @@ async def onus_v2(
 
             allowed_ids = set(state)
 
-            # 2) Solo después de tener IDs reales se consultan los complementos.
+            # 2) Complementos. show onu info se relaciona por Serial, no por su índice visual.
             info_raw = await cli.run_pon(pon, "show onu info", raise_on_error=False)
             commands.append("show onu info")
 
@@ -313,14 +414,14 @@ async def onus_v2(
             "raw": {"state": state_raw, "info": info_raw, "optical": optical_raw},
         }
 
-    info = _parse_info(info_raw, pon, allowed_ids) if _valid(info_raw) else {}
+    info = _parse_info(info_raw, pon, state) if _valid(info_raw) else {}
     optical = _parse_optical(optical_raw, pon, allowed_ids) if _valid(optical_raw) else {}
 
     onus = []
     for onu_id in sorted(state):
         row = dict(state[onu_id])
 
-        # No reemplazar el serial real obtenido de show onu state por un campo vacío.
+        # No reemplazar datos correctos de state por valores vacíos.
         extra = info.get(onu_id, {})
         if extra:
             for key, value in extra.items():

@@ -20,6 +20,7 @@ export default function Clients({ onSelectClient }) {
   const [plans, setPlans] = useState([]);
   const [routers, setRouters] = useState([]);
   const [ipv4Networks, setIpv4Networks] = useState([]);
+  const [napBoxes, setNapBoxes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -46,6 +47,8 @@ export default function Clients({ onSelectClient }) {
     router_id: "",
     ipv4_network_id: "",
     nap_box: "",
+    nap_box_id: "",
+    nap_port: "",
     optical_power_dbm: "",
     status: "active"
   });
@@ -53,19 +56,21 @@ export default function Clients({ onSelectClient }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [resClients, resPlans, resRouters, resNetworks] = await Promise.all([
+      const [resClients, resPlans, resRouters, resNetworks, resNapBoxes] = await Promise.all([
         axios.get(`${API}/clients`, {
           params: { search, status: statusFilter },
           headers: { Authorization: `Bearer ${token}` }
         }),
         axios.get(`${API}/plans`, { headers: { Authorization: `Bearer ${token}` } }),
         axios.get(`${API}/routers`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`${API}/ipv4-networks`, { headers: { Authorization: `Bearer ${token}` } })
+        axios.get(`${API}/ipv4-networks`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API}/nap-boxes`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
       setClients(resClients.data);
       setPlans(resPlans.data);
       setRouters(resRouters.data);
       setIpv4Networks(resNetworks.data);
+      setNapBoxes(resNapBoxes.data);
 
       const firstActivePlan = resPlans.data.find((plan) => plan.is_active);
       const firstMikrotik = resRouters.data.find((router) => router.device_type === "mikrotik");
@@ -187,6 +192,8 @@ export default function Clients({ onSelectClient }) {
                 router_id: mikrotikRouters[0]?.id || "",
                 ipv4_network_id: "",
                 nap_box: "",
+                nap_box_id: "",
+                nap_port: "",
                 optical_power_dbm: "",
                 status: "active"
               });
@@ -392,6 +399,8 @@ export default function Clients({ onSelectClient }) {
                               router_id: c.router_id,
                               ipv4_network_id: c.ipv4_network_id || "",
                               nap_box: c.nap_box || "",
+                              nap_box_id: c.nap_box_id || "",
+                              nap_port: c.nap_port ?? "",
                               optical_power_dbm: c.optical_power_dbm ?? "",
                               status: c.status
                             });
@@ -618,14 +627,27 @@ export default function Clients({ onSelectClient }) {
                 </div>
 
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">Caja NAP / Puerto</label>
-                  <input
-                    type="text"
-                    value={formData.nap_box}
-                    onChange={(e) => setFormData({ ...formData, nap_box: e.target.value })}
-                    placeholder="NAP-02 Puerto 4"
+                  <label className="block text-slate-300 font-semibold mb-1">Caja NAP</label>
+                  <select
+                    value={formData.nap_box_id}
+                    onChange={(e) => setFormData({ ...formData, nap_box_id: e.target.value, nap_port: "" })}
                     className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100"
-                  />
+                  >
+                    <option value="">Sin caja NAP asignada</option>
+                    {napBoxes.map((box) => <option key={box.id} value={box.id}>{box.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Puerto NAP</label>
+                  <select
+                    disabled={!formData.nap_box_id}
+                    value={formData.nap_port}
+                    onChange={(e) => setFormData({ ...formData, nap_port: e.target.value === "" ? "" : Number(e.target.value) })}
+                    className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 disabled:opacity-50"
+                  >
+                    <option value="">Sin puerto asignado</option>
+                    {Array.from({ length: napBoxes.find((box) => box.id === formData.nap_box_id)?.ports || 0 }, (_, index) => index + 1).map((port) => <option key={port} value={port}>Puerto {port}</option>)}
+                  </select>
                 </div>
 
                 <div>

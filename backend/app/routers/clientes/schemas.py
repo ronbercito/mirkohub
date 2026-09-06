@@ -32,6 +32,14 @@ class ClientIn(BaseModel):
     nap_box_id: str = ""
     nap_port: Optional[int] = None
     optical_power_dbm: Optional[float] = None
+    installation_date: str = ""
+    technology: str = "fiber"
+    zone_id: str = ""
+    zone_name: str = ""
+    monitoring_equipment_id: str = ""
+    monitoring_equipment_name: str = ""
+    antenna_type: str = ""
+    management_ip: str = ""
     status: str = "active"
     billing_day: int = Field(default=5, ge=1, le=30)
     billing_type: str = "prepaid"

@@ -18,6 +18,12 @@ from starlette.middleware.cors import CORSMiddleware
 from app.core.database import init_db
 from app.core import database
 from app.core.seed import seed_initial_data
+
+# Debe cargarse ANTES de app.routers.red.router. El router de Red puede importar
+# run_action por referencia; así recibe ya el cliente/servicio VSOL corregido
+# (NAWS Telnet + parser de inventario ONU + detalle enriquecido).
+import app.integrations.olt.runtime_fix  # noqa: F401,E402
+
 from app.routers.ajustes.router import router as ajustes_router
 from app.routers.almacen.router import router as almacen_router
 from app.routers.auth.router import router as auth_router

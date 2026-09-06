@@ -67,6 +67,7 @@ export default function Layout() {
       case "inicio":
         return <Dashboard setActiveTab={setActiveTab} />;
       case "red":
+      case "routers_olts":
         return <Network />;
       case "red_ipv4":
         return <IPv4Networks />;

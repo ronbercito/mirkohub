@@ -1,8 +1,8 @@
 /**
  * Archivo: frontend/src/modules/red/components/olt-tabs/onu-v2/OnuWorkspace.jsx
  * Pertenece a: Red > OLT > pestaña "ONUs" (versión 2 recreada desde cero).
- * Función: Orquesta los submenús independientes de ONUs v2, consulta el endpoint
- *          /olt/onus-v2 y comparte sus datos canónicos con cada vista hija.
+ * Función: Orquesta los submenús independientes de ONUs v2, consulta /olt/onus-v2
+ *          y luego /olt/onu-descriptions para mezclar el nombre configurado en VSOL.
  * Regla: Este archivo NO parsea CLI ni contiene tablas específicas. Cada submenú
  *        debe vivir en su propio archivo. No reutilizar OnuAdminTable/OnuCardsPanelV2.
  */
@@ -45,7 +45,49 @@ export default function OnuWorkspace({ router, pon, onAction, refreshSeq = 0, sh
         `${API}/routers/${router.id}/olt/onus-v2?pon=${pon}`,
         { headers },
       );
-      setData(response.data);
+
+      const base = response.data;
+      if (!base?.ok || !Array.isArray(base?.onus) || !base.onus.length) {
+        setData(base);
+        return;
+      }
+
+      // La descripción se consulta DESPUÉS de cerrar la lectura principal de ONUs.
+      // Así evitamos sesiones Telnet simultáneas contra la VSOL.
+      const ids = base.onus
+        .map((onu) => Number(onu.onu_id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+        .join(",");
+
+      let descriptionData = null;
+      try {
+        const descriptionResponse = await axios.get(
+          `${API}/routers/${router.id}/olt/onu-descriptions?pon=${pon}&ids=${encodeURIComponent(ids)}`,
+          { headers },
+        );
+        descriptionData = descriptionResponse.data;
+      } catch (_) {
+        // Si falla solo la lectura de nombres, conservar inventario/estado funcional.
+        descriptionData = null;
+      }
+
+      const descriptions = descriptionData?.descriptions || {};
+      const mergedOnus = base.onus.map((onu) => ({
+        ...onu,
+        // La descripción directa de VSOL tiene prioridad sobre cualquier inferencia.
+        description: descriptions[String(onu.onu_id)] || onu.description || "",
+      }));
+
+      setData({
+        ...base,
+        onus: mergedOnus,
+        description_source: descriptionData?.source || null,
+        description_found: descriptionData?.found ?? 0,
+        raw: {
+          ...(base.raw || {}),
+          descriptions: descriptionData?.raw || null,
+        },
+      });
     } catch (error) {
       setData({
         ok: false,
@@ -117,11 +159,12 @@ export default function OnuWorkspace({ router, pon, onAction, refreshSeq = 0, sh
           {data?.ok && tab === "optical" && <OnuOpticalView onus={onus} />}
 
           {showRaw && (
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
               {[
                 ["show onu state", data?.raw?.state],
                 ["show onu info", data?.raw?.info],
                 ["show pon rx_power", data?.raw?.optical],
+                ["Descripción VSOL", data?.raw?.descriptions ? JSON.stringify(data.raw.descriptions, null, 2) : ""],
               ].map(([title, body]) => (
                 <div key={title} className="rounded-xl border border-slate-800 bg-black/30 overflow-hidden">
                   <div className="px-3 py-2 border-b border-slate-800 text-[10px] font-semibold text-cyan-300">{title}</div>

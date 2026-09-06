@@ -32,9 +32,14 @@ from app.models.setting import Setting
 from app.models.ticket import Ticket
 from app.models.zone import Zone
 from app.models.monitoring_equipment import MonitoringEquipment
+from app.models.client_activity import ClientActivity
 from app.routers.clientes.schemas import ClientIn
 
 router = APIRouter(prefix="/clients", tags=["Clientes"], dependencies=[Depends(get_current_user)])
+
+def _activity(db: AsyncSession, client_id: str, action: str, detail: str):
+    """Registra un evento operativo sin interrumpir la transacción del cliente."""
+    db.add(ClientActivity(client_id=client_id, action=action, detail=detail))
 
 
 async def _cut_list(db: AsyncSession) -> str:
@@ -163,6 +168,8 @@ async def get_client(client_id: str, db: AsyncSession = Depends(get_db)):
     data = c.to_dict()
     data["invoices"] = [i.to_dict() for i in invoices]
     data["tickets"] = [t.to_dict() for t in tickets]
+    activities = (await db.execute(select(ClientActivity).where(ClientActivity.client_id == client_id).order_by(ClientActivity.created_at.desc()))).scalars().all()
+    data["activities"] = [item.to_dict() for item in activities]
     return data
 
 
@@ -208,6 +215,7 @@ async def create_client(data: ClientIn, db: AsyncSession = Depends(get_db)):
                        status="unpaid", notes="Factura inicial de instalación / servicio mensual"))
         c.unpaid_invoices_count, c.balance_due = 1, c.plan_price
 
+    _activity(db, c.id, "Cliente registrado", f"Servicio {c.plan_name} creado y aprovisionado en {rtr.name}.")
     await db.commit()
     return {**c.to_dict(), "mikrotik": result}
 
@@ -221,6 +229,7 @@ async def update_client(client_id: str, data: ClientIn, db: AsyncSession = Depen
     if not result["ok"]:
         await db.rollback()
         raise HTTPException(status_code=502, detail=f"No se pudo actualizar el abonado en MikroTik: {result['message']}")
+    _activity(db, c.id, "Datos actualizados", f"Servicio actualizado y sincronizado con {rtr.name}.")
     await db.commit()
     return {**c.to_dict(), "mikrotik": result}
 
@@ -230,6 +239,7 @@ async def delete_client(client_id: str, db: AsyncSession = Depends(get_db)):
     c = await get_or_404(db, Client, client_id, "Cliente")
     rtr = await db.get(Router, c.router_id) if c.router_id else None
     result = await mt.remove_client(c, rtr, await _cut_list(db))
+    _activity(db, c.id, "Cliente eliminado", f"Cliente eliminado del sistema. {result.get('message', '')}")
     await db.delete(c)
     await db.commit()
     return {"message": "Cliente eliminado correctamente", "mikrotik": result}
@@ -247,5 +257,6 @@ async def toggle_status(client_id: str, db: AsyncSession = Depends(get_db)):
         c.status, c.is_online = "active", True
         c.last_connection_time = now_iso()
         result = await mt.restore_client(c, rtr, cut_list)
+    _activity(db, c.id, "Servicio actualizado", result["message"])
     await db.commit()
     return {"id": c.id, "status": c.status, "is_online": c.is_online, "message": result["message"], "mikrotik": result}

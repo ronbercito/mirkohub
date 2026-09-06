@@ -29,6 +29,8 @@ class ClientIn(BaseModel):
     router_id: str = ""
     ipv4_network_id: str = ""
     nap_box: str = ""
+    nap_box_id: str = ""
+    nap_port: Optional[int] = None
     optical_power_dbm: Optional[float] = None
     status: str = "active"
     billing_day: int = 5

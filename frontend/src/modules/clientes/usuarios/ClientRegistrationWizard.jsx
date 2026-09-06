@@ -76,7 +76,7 @@ export default function ClientRegistrationWizard({ selectedClient, formData, set
     setStep((value) => Math.min(3, value + 1));
   };
 
-  return <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm overflow-y-auto p-4">
+  return <><div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm overflow-y-auto p-4">
     <div className="max-w-5xl mx-auto my-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-visible">
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800"><div><h3 className="text-lg font-bold text-slate-100">{selectedClient ? "Editar usuario" : "Nuevo usuario"}</h3><p className="text-xs text-slate-400">Registro guiado de abonado y aprovisionamiento de servicio.</p></div><button onClick={onClose} className="text-slate-400 hover:text-slate-100"><X /></button></div>
       <div className="flex overflow-x-auto bg-slate-950/40"><Step number="1" label="Datos personales" subtitle="Nombre, dirección y contacto" active={step === 1} done={step > 1} onClick={() => setStep(1)} /><Step number="2" label="Facturación" subtitle="Cobro y primera factura" active={step === 2} done={step > 2} onClick={() => setStep(2)} /><Step number="3" label="Servicio" subtitle="Plan, red, NAP y MikroTik" active={step === 3} done={false} onClick={() => setStep(3)} /></div>
@@ -111,8 +111,9 @@ export default function ClientRegistrationWizard({ selectedClient, formData, set
         <div className="flex justify-between gap-3 p-5 bg-slate-950/50 border-t border-slate-800"><button type="button" onClick={step === 1 ? onClose : () => setStep(step - 1)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 flex items-center gap-1"><ChevronLeft className="w-4 h-4" /> {step === 1 ? "Cancelar" : "Anterior"}</button>{step < 3 ? <button type="button" onClick={next} className="px-4 py-2 rounded-xl bg-cyan-500 text-white font-semibold flex items-center gap-1">Siguiente <ChevronRight className="w-4 h-4" /></button> : <button type="submit" className="px-5 py-2 rounded-xl bg-cyan-500 text-white font-semibold">Registrar usuario</button>}</div>
       </form>
     </div>
-  </div>;
+  </div>
   {showCoordinatesPicker && <CoordinatesPicker title={`Ubicación · ${formData.full_name || "Cliente"}`} latitude={formData.latitude} longitude={formData.longitude} onApply={({ lat, lng }) => setFormData({ ...formData, latitude: lat, longitude: lng })} onClose={() => setShowCoordinatesPicker(false)} />}
+  </>;
 }
 const Field = ({ label, children }) => <label className="block text-xs text-slate-300 font-semibold space-y-1"><span>{label}</span>{React.cloneElement(children,{className:"w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 font-normal disabled:opacity-50"})}</label>;
 const Reminder = ({ label, field, value, formData, setFormData }) => <Field label={label}><select value={value ?? ""} onChange={e=>setFormData({...formData,[field]:e.target.value === "" ? null : Number(e.target.value)})}><option value="">Desactivado</option>{Array.from({length:20},(_,index)=>index+1).map(day=><option key={day} value={day}>{day} día{day !== 1 ? "s" : ""} antes</option>)}</select></Field>;

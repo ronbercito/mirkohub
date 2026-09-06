@@ -30,6 +30,8 @@ from app.models.plan import Plan
 from app.models.router import Router
 from app.models.setting import Setting
 from app.models.ticket import Ticket
+from app.models.zone import Zone
+from app.models.monitoring_equipment import MonitoringEquipment
 from app.routers.clientes.schemas import ClientIn
 
 router = APIRouter(prefix="/clients", tags=["Clientes"], dependencies=[Depends(get_current_user)])
@@ -90,6 +92,29 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
         raise HTTPException(status_code=422, detail="Ingresa el usuario PPPoE del abonado.")
     if c.connection_type in ("IP Estática", "DHCP") and not c.ip_address.strip():
         raise HTTPException(status_code=422, detail="Selecciona una IP disponible para el abonado.")
+
+    if c.zone_id:
+        zone = await db.get(Zone, c.zone_id)
+        if not zone:
+            raise HTTPException(status_code=422, detail="La zona seleccionada ya no existe.")
+        c.zone_name = zone.name
+    else:
+        c.zone_name = ""
+
+    if c.technology not in ("fiber", "wireless"):
+        raise HTTPException(status_code=422, detail="Selecciona Fibra óptica o Inalámbrico.")
+    if c.technology == "wireless":
+        if not c.monitoring_equipment_id:
+            raise HTTPException(status_code=422, detail="Selecciona el equipo al que se conectará el abonado inalámbrico.")
+        equipment = await db.get(MonitoringEquipment, c.monitoring_equipment_id)
+        if not equipment:
+            raise HTTPException(status_code=422, detail="El equipo de monitoreo seleccionado ya no existe.")
+        c.monitoring_equipment_name = equipment.name
+    else:
+        c.monitoring_equipment_id = ""
+        c.monitoring_equipment_name = ""
+        c.antenna_type = ""
+        c.management_ip = ""
 
     nap_box = await db.get(NapBox, c.nap_box_id) if c.nap_box_id else None
     if nap_box:

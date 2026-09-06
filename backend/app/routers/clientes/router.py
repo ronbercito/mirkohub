@@ -60,10 +60,13 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
     if not rtr.password:
         raise HTTPException(status_code=422, detail="El MikroTik seleccionado no tiene credenciales API configuradas.")
 
+    expected_usage = {"PPPoE": "pppoe_pool", "IP Estática": "static", "DHCP": "dhcp"}.get(c.connection_type)
     ipv4_network = await db.get(IPv4Network, c.ipv4_network_id) if c.ipv4_network_id else None
     if ipv4_network:
         if ipv4_network.router_id != rtr.id:
             raise HTTPException(status_code=422, detail="La red IPv4 seleccionada pertenece a otro MikroTik.")
+        if expected_usage and ipv4_network.usage_type != expected_usage:
+            raise HTTPException(status_code=422, detail="La red IPv4 no corresponde al tipo de conexión seleccionado.")
         if c.ip_address:
             try:
                 address = ipaddress.ip_address(c.ip_address.strip())
@@ -72,8 +75,21 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
                 raise HTTPException(status_code=422, detail="La IP del cliente no es válida.") from error
             if address not in network or address in (network.network_address, network.broadcast_address):
                 raise HTTPException(status_code=422, detail=f"La IP debe ser un host válido dentro de {ipv4_network.cidr}.")
-    elif c.connection_type in ("IP Estática", "DHCP") and c.ip_address:
-        raise HTTPException(status_code=422, detail="Selecciona la red IPv4 correspondiente a la IP del cliente.")
+            assigned_query = select(Client.id).where(
+                Client.ipv4_network_id == ipv4_network.id,
+                Client.ip_address == str(address),
+            )
+            if c.id:
+                assigned_query = assigned_query.where(Client.id != c.id)
+            if await db.scalar(assigned_query):
+                raise HTTPException(status_code=422, detail="La IP seleccionada ya está asignada a otro cliente.")
+    elif c.connection_type in ("IP Estática", "DHCP"):
+        raise HTTPException(status_code=422, detail="Selecciona una red IPv4 del tipo de conexión correspondiente.")
+
+    if c.connection_type == "PPPoE" and not c.pppoe_user.strip():
+        raise HTTPException(status_code=422, detail="Ingresa el usuario PPPoE del abonado.")
+    if c.connection_type in ("IP Estática", "DHCP") and not c.ip_address.strip():
+        raise HTTPException(status_code=422, detail="Selecciona una IP disponible para el abonado.")
 
     nap_box = await db.get(NapBox, c.nap_box_id) if c.nap_box_id else None
     if nap_box:

@@ -3,6 +3,7 @@ Archivo: backend/app/routers/red/olt_onu_v2.py
 Pertenece a: Red > OLT > pestaña "ONUs".
 Función: Lee la lista real de ONUs del PON desde VSOL y combina estado, descripción,
          modelo, perfil, autorización y potencia sin usar el parser genérico antiguo.
+Alcance: Orquesta inventario y estados; delega nombres al módulo de descripciones.
 Regla: Este archivo es INDEPENDIENTE. No modificar Resumen, Puertos PON, Auto-find,
        Óptica ONU ni Consola desde aquí. `show onu info` es la autoridad para ONU ID.
 
@@ -28,6 +29,7 @@ from app.core.security import get_current_user
 from app.core.utils import get_or_404
 from app.integrations.olt import service as olt_service
 from app.models.router import Router
+from app.routers.red.olt_onu_descriptions import _parse_running_config
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -282,29 +284,6 @@ def _parse_info(raw: str, pon: int, state: Optional[dict[int, dict]] = None) -> 
     return result
 
 
-def _parse_running_config(raw: str, pon: int, allowed: set[int]) -> dict[int, str]:
-    """Extrae solo `onu N desc TEXTO` del bloque del PON solicitado."""
-    result: dict[int, str] = {}
-    current_pon: Optional[int] = None
-    for original in (raw or "").splitlines():
-        line = _CURSOR_RE.sub(" ", _clean_line(original)).strip()
-        iface = re.search(r"\binterface\s+gpon\s+0/(\d+)\b", line, re.I)
-        if iface:
-            current_pon = int(iface.group(1))
-            continue
-        if current_pon is not None and current_pon != int(pon):
-            continue
-        match = re.search(r"\bonu\s+(\d{1,3})\s+desc\s+(.+?)\s*$", line, re.I)
-        if not match:
-            continue
-        onu_id = int(match.group(1))
-        if onu_id in allowed:
-            value = match.group(2).strip().strip('\"').strip("'")
-            if value:
-                result[onu_id] = value
-    return result
-
-
 def _optical_prefix(line: str, pon: int, allowed: set[int]) -> Optional[tuple[int, str]]:
     """Extrae un ID óptico solo si ya existe en el inventario real."""
     text = _clean_line(line)
@@ -388,12 +367,14 @@ async def onus_v2(router_id: str, pon: int = 1, db: AsyncSession = Depends(get_d
             "raw": {"state": state_raw, "info": info_raw, "running_config": running_raw, "optical": ""},
         }
 
-    descriptions = _parse_running_config(running_raw, pon, set(info)) if _valid(running_raw) else {}
+    descriptions = _parse_running_config(running_raw, set(info), pon) if _valid(running_raw) else {}
 
     onus = []
     for onu_id in sorted(info):
         row = dict(info[onu_id])
-        row.update(state.get(onu_id, {}))
+        for key in ("status", "system_state", "omcc_state", "phase_state"):
+            if key in state.get(onu_id, {}):
+                row[key] = state[onu_id][key]
         row["description"] = descriptions.get(onu_id, "")
         row.setdefault("status", "unknown")
         row.setdefault("system_state", "")

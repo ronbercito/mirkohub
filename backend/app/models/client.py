@@ -47,6 +47,15 @@ class Client(Base):
 
     status: Mapped[str] = mapped_column(String(30), default="active")  # active | suspended | canceled | pending_install
     billing_day: Mapped[int] = mapped_column(Integer, default=5)
+    billing_type: Mapped[str] = mapped_column(String(20), default="prepaid")  # prepaid | postpaid
+    invoice_lead_days: Mapped[int] = mapped_column(Integer, default=5)
+    grace_days: Mapped[int] = mapped_column(Integer, default=5)
+    cut_after_months: Mapped[int] = mapped_column(Integer, default=1)
+    invoice_notification_channel: Mapped[str] = mapped_column(String(20), default="none")
+    payment_reminder_channel: Mapped[str] = mapped_column(String(20), default="none")
+    reminder_1_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reminder_2_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reminder_3_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     unpaid_invoices_count: Mapped[int] = mapped_column(Integer, default=0)
     balance_due: Mapped[float] = mapped_column(Float, default=0.0)
     is_online: Mapped[bool] = mapped_column(Boolean, default=False)

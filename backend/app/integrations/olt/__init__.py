@@ -402,6 +402,95 @@ def _apply_metrics(router, metrics: dict):
         router.uptime = str(uptime)[:60]
 
 
+def _parse_active_version_info(raw: str) -> dict:
+    """
+    Extrae SOLO el bloque "Current Version" de `show version`.
+
+    VSOL puede imprimir después uno o más bloques como "Partition B" con otra
+    `Software Version`. El parser genérico usa un diccionario y la clave repetida
+    termina sobrescribiendo el firmware activo con el firmware de la partición
+    secundaria. Aquí nos quedamos con el primer bloque, que corresponde a la
+    versión actualmente ejecutándose.
+    """
+    text = (raw or "").replace("\r", "")
+    if not text.strip():
+        return {}
+
+    # Si el resultado ya incluye las métricas anexadas al resumen, conservar
+    # únicamente la salida original de `show version`.
+    text = re.split(r"^\s*\$\s+show\s+sys\b", text, maxsplit=1, flags=re.IGNORECASE | re.MULTILINE)[0]
+
+    current_match = re.search(r"^\s*Current\s+Version\s*$", text, re.IGNORECASE | re.MULTILINE)
+    if current_match:
+        text = text[current_match.end():]
+
+    # Todo lo que sigue a "Partition A/B/..." es información de otra
+    # partición y no debe presentarse como firmware activo.
+    text = re.split(r"^\s*Partition\s+[A-Za-z0-9_-]+\s*$", text, maxsplit=1, flags=re.IGNORECASE | re.MULTILINE)[0]
+
+    def pick(*labels):
+        for label in labels:
+            match = re.search(
+                rf"^\s*{label}\s*:\s*(.+?)\s*$",
+                text,
+                re.IGNORECASE | re.MULTILINE,
+            )
+            if match:
+                return match.group(1).strip()
+        return ""
+
+    return {
+        "serial": pick(r"OLT\s+Serial\s+Number"),
+        "model": pick(r"OLT\s+Device\s+Model", r"Device\s+Model", r"Model"),
+        "hardware": pick(r"Hardware\s+Version"),
+        "software": pick(r"Software\s+Version", r"Firmware\s+Version"),
+        "created": pick(r"Software\s+Created\s+Time"),
+    }
+
+
+def _apply_active_version(router, active: dict):
+    """Corrige los campos persistidos que usa la cabecera de Gestión de Red."""
+    firmware = (active or {}).get("software")
+    model = (active or {}).get("model")
+
+    if firmware:
+        router.ros_version = firmware
+        router.software_version = firmware
+
+    if model:
+        # board_name es el campo que usa la UI como modelo detectado.
+        router.board_name = model
+
+
+def _apply_active_version_to_result(result: dict, active: dict) -> dict:
+    """Sobrescribe en el resumen los valores duplicados con el bloque activo."""
+    if not isinstance(result, dict) or not active:
+        return result
+
+    info = dict(result.get("info") or {})
+
+    canonical = {
+        "serial": "Olt Serial Number",
+        "model": "Olt Device Model",
+        "hardware": "Hardware Version",
+        "software": "Software Version",
+        "created": "Software Created Time",
+    }
+
+    # Eliminar variantes de capitalización antes de añadir las claves canónicas.
+    normalized_targets = {v.lower() for v in canonical.values()}
+    info = {k: v for k, v in info.items() if str(k).strip().lower() not in normalized_targets}
+
+    for field, key in canonical.items():
+        value = active.get(field)
+        if value:
+            info[key] = value
+
+    result["info"] = info
+    result["active_version"] = active
+    return result
+
+
 def _augment_result(result: dict, metrics: dict) -> dict:
     if not isinstance(result, dict):
         return result
@@ -448,6 +537,10 @@ async def _run_action_with_system_metrics(router, action: str, **params):
     if action != "system" or not result.get("ok"):
         return result
 
+    active = _parse_active_version_info(result.get("raw", ""))
+    _apply_active_version(router, active)
+    _apply_active_version_to_result(result, active)
+
     metrics = await _read_system_metrics(router)
     _apply_metrics(router, metrics)
     return _augment_result(result, metrics)
@@ -458,6 +551,10 @@ async def _snapshot_olt_with_metrics(router):
 
     if not result.get("ok"):
         return result
+
+    active = _parse_active_version_info(result.get("raw", ""))
+    _apply_active_version(router, active)
+    _apply_active_version_to_result(result, active)
 
     metrics = await _read_system_metrics(router)
     _apply_metrics(router, metrics)

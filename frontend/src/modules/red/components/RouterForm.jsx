@@ -14,7 +14,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { Server } from "lucide-react";
 import { toast } from "sonner";
 
-const EMPTY = { name: "", device_type: "mikrotik", ip_address: "", port: 8728, use_ssl: false, username: "admin", password: "", model: "", location: "" };
+const EMPTY = { name: "", device_type: "mikrotik", ip_address: "", port: 8728, use_ssl: false, username: "admin", password: "", model: "", location: "", latitude: "", longitude: "" };
 
 export default function RouterForm({ initial, onClose, onSaved }) {
   const { API, token } = useAuth();
@@ -114,6 +114,10 @@ export default function RouterForm({ initial, onClose, onSaved }) {
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block text-slate-300 font-semibold mb-1">Latitud</label><input type="number" step="any" value={form.latitude ?? ""} onChange={(e) => set("latitude", e.target.value === "" ? "" : Number(e.target.value))} placeholder="-8.0679" className={`${input} font-mono`} /></div>
+            <div><label className="block text-slate-300 font-semibold mb-1">Longitud</label><input type="number" step="any" value={form.longitude ?? ""} onChange={(e) => set("longitude", e.target.value === "" ? "" : Number(e.target.value))} placeholder="-78.9859" className={`${input} font-mono`} /></div>
+          </div>
           <p className="text-[11px] text-slate-500 bg-slate-950/60 border border-slate-800 rounded-lg p-2">
             En el MikroTik: <span className="font-mono text-slate-300">/ip service enable api</span> (o api-ssl) y un usuario con políticas <span className="font-mono text-slate-300">read, write, api</span>. Permite el acceso desde la IP de este servidor.
           </p>

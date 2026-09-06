@@ -14,6 +14,7 @@ Notas de esta VSOL V1600G1-B:
 - Para evitar IDs falsos (101/111/121/128), los dígitos ONU+cursor se separan usando
   el orden real de las filas. Así `128C...` en la fila 12 se interpreta como ONU 12
   + cursor 8C, no como ONU 128.
+- Inventario: columnas 11C/32C/55C/63C; no reutilizar los cursores de estado.
 - `show onu state` solo complementa el estado de las ONUs autorizadas.
 - La descripción se extrae de `onu <id> desc ...` con un solo `show running-config`.
 """
@@ -179,6 +180,7 @@ def _info_records(raw: str, pon: int) -> list[str]:
     start = re.compile(rf"^(?:GPON|EPON)0/{int(pon)}:", re.I)
 
     for original in (raw or "").splitlines():
+        original = re.sub(r"\x1b\[(\d+)C", r"\1C", original)
         line = _clean_line(original)
         if not line:
             continue
@@ -246,14 +248,28 @@ def _clean_description(parts: list[str]) -> str:
 def _parse_info(raw: str, pon: int, state: Optional[dict[int, dict]] = None) -> dict[int, dict]:
     """Parsea el inventario autorizado: Onuindex | Model | Profile | Mode | AuthInfo."""
     result: dict[int, dict] = {}
-    previous = 0
-    used: set[int] = set()
     for record in _info_records(raw, pon):
-        found = _state_prefix(record, pon, previous, used)
-        if not found:
+        # Convertir ANSI completo a sus marcadores, sin perder las columnas.
+        record = re.sub(r"\x1b\[(\d+)C", r"\1C", record)
+        prefix = rf"^(?:GPON|EPON)0/{int(pon)}:"
+        # El sufijo 11C es una columna, NO parte del ID. No inferir por orden.
+        compact = re.match(
+            prefix + r"(\d{1,3})11C(.*?)32C(.*?)55C((?i:sn-password|password|loid|mac|sn))63C(.*)$",
+            record,
+        )
+        if compact:
+            onu_id = int(compact[1])
+            fields = [compact[i].strip() for i in range(2, 6)]
+        else:
+            clean = re.match(prefix + r"(\d{1,3})(?:\s+|\|)(.*)$", record)
+            if not clean:
+                continue
+            onu_id = int(clean[1])
+            fields = [p.strip() for p in re.split(r"\s{2,}|\|", clean[2]) if p.strip()]
+            if len(fields) < 4:
+                fields = clean[2].split()
+        if not 1 <= onu_id <= 128 or onu_id in result:
             continue
-        onu_id, rest = found
-        fields = _cursor_fields(rest)
         if not fields:
             continue
 
@@ -279,8 +295,6 @@ def _parse_info(raw: str, pon: int, state: Optional[dict[int, dict]] = None) -> 
             "auth_info": auth_info,
             "serial": auth_info,
         }
-        used.add(onu_id)
-        previous = onu_id
     return result
 
 

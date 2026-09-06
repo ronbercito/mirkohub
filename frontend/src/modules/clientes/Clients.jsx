@@ -26,7 +26,6 @@ export default function Clients({ onSelectClient }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const activePlans = plans.filter((plan) => plan.is_active);
   const mikrotikRouters = routers.filter((router) => router.device_type === "mikrotik");
-  const compatibleNetworks = ipv4Networks.filter((network) => network.router_id === formData.router_id);
   
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
@@ -52,6 +51,7 @@ export default function Clients({ onSelectClient }) {
     optical_power_dbm: "",
     status: "active"
   });
+  const compatibleNetworks = ipv4Networks.filter((network) => network.router_id === formData.router_id);
 
   const fetchData = async () => {
     setLoading(true);

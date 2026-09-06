@@ -119,7 +119,7 @@ export default function OnuWorkspace({ router, pon, onAction, refreshSeq = 0, sh
               {[
                 ["show onu state", data?.raw?.state],
                 ["show onu info", data?.raw?.info],
-                ["show pon rx_power", data?.raw?.optical],
+                ["show running-config", data?.raw?.running_config],
               ].map(([title, body]) => (
                 <div key={title} className="rounded-xl border border-slate-800 bg-black/30 overflow-hidden">
                   <div className="px-3 py-2 border-b border-slate-800 text-[10px] font-semibold text-cyan-300">{title}</div>

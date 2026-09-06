@@ -16,6 +16,7 @@ export default function Settings() {
 
   const [settings, setSettings] = useState({
     company_name: "",
+    logo_data: "",
     ruc: "",
     phone: "",
     email: "",
@@ -48,6 +49,22 @@ export default function Settings() {
     fetchSettings();
   }, [API, token]);
 
+  const handleLogoChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Selecciona un archivo de imagen.");
+      return;
+    }
+    if (file.size > 700 * 1024) {
+      toast.error("El logo debe pesar como máximo 700 KB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setSettings((value) => ({ ...value, logo_data: String(reader.result || "") }));
+    reader.readAsDataURL(file);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -55,7 +72,7 @@ export default function Settings() {
       const response = await axios.put(`${API}/settings`, settings, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      window.dispatchEvent(new CustomEvent("fibraz-company-name", { detail: { companyName: response.data.company_name } }));
+      window.dispatchEvent(new CustomEvent("fibraz-branding", { detail: { companyName: response.data.company_name, logoData: response.data.logo_data || "" } }));
       toast.success("Configuración del ISP actualizada correctamente");
     } catch (e) {
       toast.error("Error al guardar ajustes");
@@ -133,6 +150,19 @@ export default function Settings() {
                 onChange={(e) => setSettings({ ...settings, address: e.target.value })}
                 className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100"
               />
+            </div>
+          </div>
+          <div className="mt-4 border-t border-slate-800 pt-4">
+            <label className="block text-xs font-semibold text-slate-300 mb-2">Logo del panel y pantalla de inicio</label>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="h-14 w-14 rounded-xl border border-slate-700 bg-slate-950 flex items-center justify-center overflow-hidden">
+                {settings.logo_data ? <img src={settings.logo_data} alt="Vista previa del logo" className="h-full w-full object-contain" /> : <Building2 className="w-6 h-6 text-slate-500" />}
+              </div>
+              <div>
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onChange={handleLogoChange} className="block text-xs text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-cyan-500 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-cyan-400" />
+                <p className="mt-1 text-[11px] text-slate-500">PNG, JPG, WEBP o SVG. Máximo 700 KB.</p>
+              </div>
+              {settings.logo_data && <button type="button" onClick={() => setSettings({ ...settings, logo_data: "" })} className="text-xs font-semibold text-rose-300 hover:text-rose-200">Quitar logo</button>}
             </div>
           </div>
         </div>

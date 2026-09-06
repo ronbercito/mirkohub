@@ -6,39 +6,39 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
-import { Settings as SettingsIcon, Save, Building2, ShieldAlert, Smartphone, Users, MailCog, FileText, ReceiptText, Landmark, Code2, UserRound, BellRing, Headphones, HeartPulse, Upload, Repeat2, LayoutTemplate, MessageSquare, MapPinned, ContactRound, Cloud, Database, Clock3, ScrollText, Wrench, Server, RefreshCw, KeyRound, BadgeInfo } from "lucide-react";
+import { Settings as SettingsIcon, Save, Building2, ShieldAlert, Smartphone, Users, DollarSign, MessageSquare, MapPin, Package, Headphones, Server, RefreshCw, Wifi, Calendar, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 const SECTIONS = [
   { id: "general", label: "General", icon: SettingsIcon, description: "Empresa, cobros y corte" },
   { id: "staff", label: "Gestión personal", icon: Users, description: "Usuarios y permisos" },
-  { id: "mail", label: "Servidor de correo", icon: MailCog, description: "SMTP y envío" },
-  { id: "billing", label: "Facturación", icon: FileText, description: "Reglas y comprobantes" },
-  { id: "electronic", label: "Facturación electrónica", icon: ReceiptText, description: "SUNAT y series" },
-  { id: "payments", label: "Pasarelas de pago", icon: Landmark, description: "Cobros en línea" },
-  { id: "templates", label: "Editor plantillas", icon: Code2, description: "Diseños y mensajes" },
-  { id: "portal", label: "Portal cliente", icon: UserRound, description: "Acceso de abonados" },
-  { id: "push", label: "Notificaciones Push", icon: BellRing, description: "Avisos al instante" },
+  { id: "mail", label: "Servidor de correo", icon: MessageSquare, description: "SMTP y envío" },
+  { id: "billing", label: "Facturación", icon: DollarSign, description: "Reglas y comprobantes" },
+  { id: "electronic", label: "Facturación electrónica", icon: DollarSign, description: "SUNAT y series" },
+  { id: "payments", label: "Pasarelas de pago", icon: DollarSign, description: "Cobros en línea" },
+  { id: "templates", label: "Editor plantillas", icon: SettingsIcon, description: "Diseños y mensajes" },
+  { id: "portal", label: "Portal cliente", icon: Users, description: "Acceso de abonados" },
+  { id: "push", label: "Notificaciones Push", icon: Wifi, description: "Avisos al instante" },
   { id: "tickets", label: "Tickets", icon: Headphones, description: "Soporte y atención" },
-  { id: "zendesk", label: "Zendesk Support", icon: HeartPulse, description: "Integración externa" },
+  { id: "zendesk", label: "Zendesk Support", icon: Headphones, description: "Integración externa" },
   { id: "blacklist", label: "Monitor Blacklist", icon: ShieldAlert, description: "Revisión de IPs" },
-  { id: "import", label: "Importar clientes", icon: Upload, description: "Carga masiva" },
-  { id: "bulk", label: "Cambios masivos", icon: Repeat2, description: "Actualizar registros" },
-  { id: "config_templates", label: "Plantillas configuración", icon: LayoutTemplate, description: "Ajustes reutilizables" },
+  { id: "import", label: "Importar clientes", icon: Package, description: "Carga masiva" },
+  { id: "bulk", label: "Cambios masivos", icon: RefreshCw, description: "Actualizar registros" },
+  { id: "config_templates", label: "Plantillas configuración", icon: SettingsIcon, description: "Ajustes reutilizables" },
   { id: "invoice_messages", label: "Mensajes facturas", icon: MessageSquare, description: "Textos de cobro" },
-  { id: "locations", label: "Ubicaciones", icon: MapPinned, description: "Zonas y oficinas" },
-  { id: "custom_fields", label: "Campos personalizados", icon: ContactRound, description: "Datos adicionales" },
+  { id: "locations", label: "Ubicaciones", icon: MapPin, description: "Zonas y oficinas" },
+  { id: "custom_fields", label: "Campos personalizados", icon: Users, description: "Datos adicionales" },
   { id: "messaging", label: "Mensajería", icon: MessageSquare, description: "Canales de contacto" },
-  { id: "cloud", label: "Cloud", icon: Cloud, description: "Sincronización" },
-  { id: "google", label: "Google", icon: BadgeInfo, description: "Servicios conectados" },
-  { id: "database", label: "Base de datos", icon: Database, description: "Respaldo y datos" },
-  { id: "crontab", label: "Crontab", icon: Clock3, description: "Tareas programadas" },
-  { id: "logs", label: "Logs", icon: ScrollText, description: "Registro del sistema" },
+  { id: "cloud", label: "Cloud", icon: Server, description: "Sincronización" },
+  { id: "google", label: "Google", icon: MapPin, description: "Servicios conectados" },
+  { id: "database", label: "Base de datos", icon: Server, description: "Respaldo y datos" },
+  { id: "crontab", label: "Crontab", icon: Calendar, description: "Tareas programadas" },
+  { id: "logs", label: "Logs", icon: SettingsIcon, description: "Registro del sistema" },
   { id: "system", label: "Sistema", icon: Wrench, description: "Preferencias técnicas" },
   { id: "server", label: "Servidor", icon: Server, description: "Estado y servicios" },
   { id: "migrate", label: "Migrar", icon: RefreshCw, description: "Transferir datos" },
-  { id: "freeradius", label: "FreeRADIUS", icon: KeyRound, description: "Autenticación de red" },
-  { id: "license", label: "Licencia", icon: BadgeInfo, description: "Información de licencia" },
+  { id: "freeradius", label: "FreeRADIUS", icon: ShieldAlert, description: "Autenticación de red" },
+  { id: "license", label: "Licencia", icon: ShieldAlert, description: "Información de licencia" },
 ];
 
 export default function Settings() {
@@ -319,7 +319,7 @@ export default function Settings() {
         </div>
       </form> : activeSection === "google" ? <form onSubmit={handleSubmit} className="max-w-4xl space-y-5 rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
         <div className="flex items-center gap-3 border-b border-slate-800 pb-4">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300"><BadgeInfo className="h-5 w-5" /></span>
+          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-300"><MapPin className="h-5 w-5" /></span>
           <div><h3 className="font-bold text-slate-100">Google Maps</h3><p className="text-xs text-slate-500">Conecta el mapa de clientes a Google Maps Platform.</p></div>
         </div>
         <div>

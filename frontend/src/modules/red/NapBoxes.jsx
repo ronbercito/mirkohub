@@ -26,7 +26,7 @@ export default function NapBoxes() {
   const [selectedPort, setSelectedPort] = useState(null);
 
   const load = async () => {
-    try { const [boxResponse, zoneResponse] = await Promise.all([axios.get(`${API}/nap-boxes`, { headers }), axios.get(`${API}/zones`, { headers })]); setBoxes(boxResponse.data); setZones(zoneResponse.data); }
+    try { const [boxResponse, zoneResponse] = await Promise.all([axios.get(`${API}/nap-boxes`, { headers }), axios.get(`${API}/zones`, { headers })]); setBoxes(boxResponse.data); setZones(zoneResponse.data); setZoneFilter((current) => current || zoneResponse.data[0]?.id || ""); }
     catch (e) { toast.error(e?.response?.data?.detail || "No se pudieron cargar las cajas NAP"); }
   };
   useEffect(() => { load(); }, []);

@@ -5,7 +5,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
-import { Box, Map, MapPin, Server, Users } from "lucide-react";
+import { Box, Map as MapIcon, MapPin, Server, Users } from "lucide-react";
 import { toast } from "sonner";
 
 const loadGoogleMaps = (apiKey) => new Promise((resolve, reject) => {
@@ -173,7 +173,7 @@ export default function ClientMap() {
     <div className="space-y-6 animate-in fade-in duration-200">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
-          <h2 className="flex items-center gap-2 text-2xl font-bold text-slate-100"><Map className="text-cyan-400" /> Mapa de clientes</h2>
+          <h2 className="flex items-center gap-2 text-2xl font-bold text-slate-100"><MapIcon className="text-cyan-400" /> Mapa de clientes</h2>
           <p className="mt-1 text-xs text-slate-400">Clientes, Cajas NAP y bases centrales para instalaciones, soporte y visitas.</p>
         </div>
         <div className="flex flex-wrap gap-2">

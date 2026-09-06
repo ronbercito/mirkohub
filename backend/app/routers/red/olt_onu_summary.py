@@ -1,11 +1,18 @@
 """
 Archivo: backend/app/routers/red/olt_onu_summary.py
 Pertenece a: Red > OLT > pestaña "ONUs" > contadores superiores.
-Función: Obtiene SOLO los contadores del PON seleccionado sin tocar inventario, tarjetas,
-         óptica, consola ni otras pestañas. Para Online/Offline usa la lectura óptica global
-         del PON, probando las variantes CLI `rx-power` y `rx` según firmware VSOL.
-Regla: Este archivo debe seguir siendo ligero: pocas consultas, una sola sesión CLI y nunca
-       consultar ONU por ONU. Si esta lectura auxiliar falla, NO marca la OLT como offline.
+Función: Obtiene SOLO los contadores del PON seleccionado (total, online y offline)
+         usando comandos de estado propios de VSOL y una lectura óptica como respaldo.
+Regla: Este archivo NO modifica inventario, tarjetas, detalle ONU, óptica, consola ni
+       otras pestañas. Debe usar pocas consultas y una sola sesión CLI para no saturar
+       Telnet. Si esta lectura auxiliar falla, NO marca la OLT como offline.
+
+Comandos VSOL usados aquí:
+  configure terminal
+  interface gpon 0/X
+  show onu state
+  show pon onu all rx-power     (fallback)
+  show pon onu all rx           (fallback para firmwares antiguos)
 """
 
 import re
@@ -35,20 +42,37 @@ def _valid(raw: str) -> bool:
 
 
 def _extract_onu_id(line: str, pon: int):
-    """Reconoce formatos habituales de VSOL dentro del PON seleccionado."""
+    """
+    Extrae el ONU ID de los formatos habituales de la familia V1600G.
+
+    Ejemplos aceptados:
+      GPON0/8:12
+      0/8:12
+      0/8/12
+      1/1/8:12
+      ONU 12
+      12   working ...       (cuando ya estamos dentro del PON)
+    """
+    value_text = line or ""
+
     patterns = (
+        # GPON0/8:12 o 0/8:12
         rf"(?:GPON|EPON)?\s*0/{int(pon)}\s*[:/]\s*(\d{{1,3}})",
+        # Algunos firmwares anteponen slot/chassis: 1/1/8:12
+        rf"(?:\d+/)+{int(pon)}\s*:\s*(\d{{1,3}})",
+        # ONU 12 / ONU-ID 12 / ONUIndex 12
         r"\bONU(?:\s*(?:ID|INDEX))?\s*[:=#-]?\s*(\d{1,3})\b",
     )
+
     for pattern in patterns:
-        match = re.search(pattern, line or "", re.IGNORECASE)
+        match = re.search(pattern, value_text, re.IGNORECASE)
         if match:
             value = int(match.group(1))
             if 1 <= value <= 128:
                 return value
 
-    # En modo `interface gpon 0/X` varias versiones imprimen sólo el ID local.
-    local = re.match(r"^\s*(\d{1,3})(?:\s+|\||$)", line or "")
+    # En modo interface gpon algunas versiones dejan sólo el ID al inicio.
+    local = re.match(r"^\s*(\d{1,3})(?:\s+|\||$)", value_text)
     if local:
         value = int(local.group(1))
         if 1 <= value <= 128:
@@ -57,11 +81,82 @@ def _extract_onu_id(line: str, pon: int):
     return None
 
 
+def _state_from_line(line: str):
+    """Normaliza los estados que VSOL puede devolver en `show onu state`."""
+    low = (line or "").lower()
+
+    # offline primero para evitar coincidencias ambiguas.
+    if re.search(r"\boffline\b|\blos\b|\bderegistered\b|\bdown\b", low):
+        return "offline"
+
+    # `working` es el estado operativo normal en varias revisiones V1600G.
+    # `syncmib` ya implica ONU registrada, aunque esté sincronizando config.
+    if re.search(r"\bworking\b|\bonline\b|\bregistered\b|\bsyncmib(?:-fail)?\b", low):
+        return "online"
+
+    return ""
+
+
+def _parse_state_rows(raw: str, pon: int):
+    """Devuelve IDs online/offline encontrados en `show onu state`."""
+    online = set()
+    offline = set()
+
+    for original in (raw or "").replace("\r", "").splitlines():
+        state = _state_from_line(original)
+        if not state:
+            continue
+
+        onu_id = _extract_onu_id(original, pon)
+        if not onu_id:
+            continue
+
+        if state == "online":
+            online.add(onu_id)
+            offline.discard(onu_id)
+        else:
+            offline.add(onu_id)
+            online.discard(onu_id)
+
+    return online, offline
+
+
+def _parse_state_footer(raw: str):
+    """
+    Algunos firmwares incluyen un resumen como:
+      Total Num: 4 (num of working: 3)
+    o tablas resumen con Total ONUs / Online ONUs.
+    """
+    text = (raw or "").replace("\r", "")
+
+    match = re.search(
+        r"Total\s+Num\s*:\s*(\d+)\s*\([^\n]*?(?:working|online)\s*:\s*(\d+)",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        total = int(match.group(1))
+        online = int(match.group(2))
+        return total, online, max(0, total - online)
+
+    # Variante tipo: GPON0/1   43   29 bajo cabecera Total ONUs / Online ONUs.
+    match = re.search(
+        r"(?:GPON|EPON)?\s*0/\d+\s+(\d+)\s+(\d+)\s*$",
+        text,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if match and re.search(r"Total\s+ONUs?.*Online\s+ONUs?", text, re.IGNORECASE | re.DOTALL):
+        total = int(match.group(1))
+        online = int(match.group(2))
+        return total, online, max(0, total - online)
+
+    return None
+
+
 def _extract_rx_dbm(line: str):
-    """Extrae la potencia RX sin confundir el número de PON/ONU con la lectura."""
+    """Extrae RX dBm de una fila óptica sin confundir PON/ONU con potencia."""
     text = line or ""
 
-    # Preferir valores etiquetados como RX/RxPower.
     labelled = re.search(
         r"\b(?:rx(?:\s*power)?|rxpower)\b\s*[:=]?\s*(-?\d+(?:\.\d+)?)",
         text,
@@ -73,7 +168,6 @@ def _extract_rx_dbm(line: str):
         except ValueError:
             return None
 
-    # Tablas VSOL normalmente muestran la potencia como número negativo.
     values = re.findall(r"-\d+(?:\.\d+)?", text)
     for value in reversed(values):
         try:
@@ -86,48 +180,20 @@ def _extract_rx_dbm(line: str):
     return None
 
 
-def _parse_optical_state(raw: str, pon: int):
-    """
-    Devuelve IDs online/offline a partir de UNA tabla óptica global.
-
-    - Si la fila dice online/offline/los, se respeta el estado explícito.
-    - Si no hay estado, una RX razonable (-38 < RX < 10 dBm) se toma como online.
-    - Valores típicos de ausencia de señal (-40, -99, etc.) se toman como offline.
-    """
+def _parse_optical_online(raw: str, pon: int):
+    """Fallback: una RX válida identifica una ONU registrada/online."""
     online = set()
-    offline = set()
 
     for original in (raw or "").replace("\r", "").splitlines():
-        line = original.strip()
-        if not line:
-            continue
-
-        onu_id = _extract_onu_id(line, pon)
+        onu_id = _extract_onu_id(original, pon)
         if not onu_id:
             continue
 
-        low = line.lower()
-        if re.search(r"\bonline\b|\bregistered\b|\bworking\b|\bup\b", low):
+        rx = _extract_rx_dbm(original)
+        if rx is not None and -38.0 < rx < 10.0:
             online.add(onu_id)
-            offline.discard(onu_id)
-            continue
-        if re.search(r"\boffline\b|\blos\b|\bderegistered\b|\bdown\b", low):
-            offline.add(onu_id)
-            online.discard(onu_id)
-            continue
 
-        rx = _extract_rx_dbm(line)
-        if rx is None:
-            continue
-
-        if -38.0 < rx < 10.0:
-            online.add(onu_id)
-            offline.discard(onu_id)
-        elif rx <= -38.0:
-            offline.add(onu_id)
-            online.discard(onu_id)
-
-    return online, offline
+    return online
 
 
 @router.get("/{router_id}/olt/onu-summary")
@@ -138,11 +204,15 @@ async def onu_summary(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Resumen ligero para los indicadores superiores de ONUs.
+    Resumen ligero de los indicadores superiores de la pestaña ONUs.
 
-    Importante: esta etapa sólo corrige Online/Offline. El contador de nombres se deja
-    como no disponible hasta implementar una fuente global fiable, evitando nuevamente
-    26/52/128 consultas `show onu <id> description` que pueden saturar Telnet.
+    Prioridad:
+      1) `show onu state` en el PON actual.
+      2) Si el firmware no lo devuelve, potencia óptica global del PON.
+
+    El contador "con nombre" se mantiene separado porque el HTML de AdminOLT demuestra
+    que ese producto sirve esos datos desde su backend/base de datos; no existe en el HTML
+    entregado un comando CLI global fiable para obtener todas las descripciones de VSOL.
     """
     olt = await get_or_404(db, Router, router_id, "Router")
     if olt.device_type != "olt":
@@ -152,8 +222,9 @@ async def onu_summary(
     total = max(0, int(total or 0))
 
     commands = []
+    state_raw = ""
     optical_raw = ""
-    optical_command = ""
+    source = "none"
 
     try:
         async with olt_service.connect(olt) as cli:
@@ -168,18 +239,28 @@ async def onu_summary(
             if _BAD_RE.search(iface_raw or ""):
                 raise RuntimeError(f"La OLT no aceptó '{iface}'")
 
-            # V1.5.x suele usar rx-power; revisiones anteriores del V1600G usan rx.
-            for command in ("show pon onu all rx-power", "show pon onu all rx"):
-                raw = await cli.run(command, raise_on_error=False)
-                commands.append(command)
-                if not _valid(raw):
-                    continue
+            # Este es el comando de estado que usan las V-SOL GPON de esta familia.
+            raw = await cli.run("show onu state", raise_on_error=False)
+            commands.append("show onu state")
+            if _valid(raw):
+                rows_online, rows_offline = _parse_state_rows(raw, pon)
+                footer = _parse_state_footer(raw)
+                if rows_online or rows_offline or footer:
+                    state_raw = raw
+                    source = "show onu state"
 
-                on, off = _parse_optical_state(raw, pon)
-                if on or off:
-                    optical_raw = raw
-                    optical_command = command
-                    break
+            # Sólo usar óptica si el comando de estado no produjo datos parseables.
+            if not state_raw:
+                for command in ("show pon onu all rx-power", "show pon onu all rx"):
+                    raw = await cli.run(command, raise_on_error=False)
+                    commands.append(command)
+                    if not _valid(raw):
+                        continue
+                    online_ids = _parse_optical_online(raw, pon)
+                    if online_ids:
+                        optical_raw = raw
+                        source = command
+                        break
 
     except Exception as exc:
         return {
@@ -194,20 +275,31 @@ async def onu_summary(
             "commands": commands,
         }
 
-    online_ids, offline_ids = _parse_optical_state(optical_raw, pon)
-    online_count = len(online_ids)
+    online_count = 0
+    offline_count = 0
 
-    # Si la tabla óptica identifica explícitamente offline, usarla. Si no, el total
-    # ya viene del inventario `show onuinfo`, por lo que el resto se considera offline.
-    if offline_ids:
-        offline_count = len(offline_ids)
-        known = online_count + offline_count
-        if total > known:
-            offline_count += total - known
-    elif total and online_count <= total:
-        offline_count = total - online_count
-    else:
-        offline_count = 0
+    if state_raw:
+        online_ids, offline_ids = _parse_state_rows(state_raw, pon)
+        footer = _parse_state_footer(state_raw)
+
+        if online_ids or offline_ids:
+            online_count = len(online_ids)
+            offline_count = len(offline_ids)
+
+            # El inventario `show onuinfo` ya aporta el total exacto del PON.
+            # Si show onu state omite estados transitorios, se contabilizan como no-online.
+            known = online_count + offline_count
+            if total > known:
+                offline_count += total - known
+        elif footer:
+            state_total, online_count, offline_count = footer
+            if not total:
+                total = state_total
+
+    elif optical_raw:
+        online_ids = _parse_optical_online(optical_raw, pon)
+        online_count = len(online_ids)
+        offline_count = max(0, total - online_count) if total else 0
 
     return {
         "ok": True,
@@ -216,6 +308,9 @@ async def onu_summary(
         "offline": offline_count,
         "named": None,
         "named_supported": False,
-        "source": f"optical:{optical_command}" if optical_command else "none",
+        "source": source,
         "commands": commands,
+        # Diagnóstico limitado: permite saber qué devolvió este firmware sin tocar otras pestañas.
+        "state_preview": state_raw[:4000],
+        "optical_preview": optical_raw[:4000],
     }

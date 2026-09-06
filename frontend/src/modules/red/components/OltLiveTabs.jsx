@@ -42,9 +42,18 @@ export default function OltLiveTabs({ router }) {
   const [showRaw, setShowRaw] = useState(false);
   const [cmd, setCmd] = useState("show version");
   const [auth, setAuth] = useState({ onu: "", sn: "", profile: "default" });
+  const [onuRefreshSeq, setOnuRefreshSeq] = useState(0);
 
   const load = useCallback(async () => {
     if (tab === "console") return;
+
+    // ONUs v2 tiene endpoint, parser y estado propios. No ejecutar aquí el antiguo
+    // /olt/onu_list porque volvería a introducir el parser que generaba IDs 101/111/121.
+    if (tab === "onu_list") {
+      setRes({ ok: true, raw: "" });
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -105,7 +114,11 @@ export default function OltLiveTabs({ router }) {
         { headers },
       );
       toast.success(response.data.message);
-      await load();
+      if (tab === "onu_list") {
+        setOnuRefreshSeq((value) => value + 1);
+      } else {
+        await load();
+      }
     } catch (error) {
       toast.error(error?.response?.data?.detail || "La OLT rechazó la acción");
     }
@@ -161,7 +174,7 @@ export default function OltLiveTabs({ router }) {
           {tab !== "console" && (
             <button
               data-testid="olt-refresh"
-              onClick={load}
+              onClick={tab === "onu_list" ? () => setOnuRefreshSeq((value) => value + 1) : load}
               className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-cyan-400" : ""}`} />
@@ -189,9 +202,9 @@ export default function OltLiveTabs({ router }) {
         <OltOnusTab
           router={router}
           pon={pon}
-          res={res}
           onAction={onuAction}
-          onRefresh={load}
+          refreshSeq={onuRefreshSeq}
+          showRaw={showRaw}
         />
       )}
 
@@ -216,7 +229,7 @@ export default function OltLiveTabs({ router }) {
         />
       )}
 
-      {res?.ok && showRaw && tab !== "console" && (
+      {res?.ok && showRaw && tab !== "console" && tab !== "onu_list" && (
         <pre
           data-testid="olt-raw"
           className="mt-3 p-3 rounded-xl bg-black/60 border border-slate-800 text-[11px] text-slate-300 font-mono whitespace-pre-wrap max-h-96 overflow-auto"

@@ -2,7 +2,7 @@
  * Archivo: frontend/src/modules/red/components/OltLiveTabs.jsx
  * Función: Pestañas de lectura en vivo de una OLT VSOL (por CLI Telnet/SSH): Resumen,
  *          Puertos PON, ONUs, pendientes (auto-find), óptica y consola. La pestaña ONUs
- *          usa una vista gráfica enriquecida con clientes/planes del sistema.
+ *          usa una vista gráfica expandible y reinterpreta la salida cruda de VSOL.
  * Trabaja con: modules/red/Network.jsx, backend/app/routers/red/router.py (/api/routers/{id}/olt/*),
  *              backend/app/integrations/olt/vsol.py (OLT_PROFILES)
  */
@@ -12,7 +12,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { RefreshCw, Terminal, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import PonOpticalPanel from "./PonOpticalPanel";
-import OnuCardsPanel from "./OnuCardsPanel";
+import OnuCardsPanelV2 from "./OnuCardsPanelV2";
 
 const TABS = [
   { id: "system", label: "Resumen" },
@@ -140,7 +140,7 @@ export default function OltLiveTabs({ router }) {
       )}
 
       {res?.ok && tab === "onu_list" && (
-        <OnuCardsPanel router={router} pon={pon} rows={rows} onAction={onuAction} onRefresh={load} />
+        <OnuCardsPanelV2 router={router} pon={pon} rows={rows} raw={res.raw || ""} onAction={onuAction} onRefresh={load} />
       )}
 
       {res?.ok && tab !== "system" && tab !== "pon_optical" && tab !== "onu_list" && (

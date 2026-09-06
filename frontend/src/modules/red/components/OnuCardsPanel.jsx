@@ -2,7 +2,7 @@
  * Archivo: frontend/src/modules/red/components/OnuCardsPanel.jsx
  * Función: Vista gráfica para ONUs de una OLT VSOL. Cruza el listado CLI con
  *          clientes/planes del sistema por SN, consulta potencia óptica del PON,
- *          permite buscar/filtrar y cargar el detalle de una ONU bajo demanda.
+ *          permite buscar/filtrar y cargar VLAN/detalle bajo demanda.
  */
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -33,9 +33,8 @@ const norm = (value) => textOf(value).toLowerCase().replace(/[^a-z0-9]/g, "");
 
 const valueByKey = (row, patterns) => {
   if (!row) return "";
-  const keys = Object.keys(row);
   for (const pattern of patterns) {
-    const key = keys.find((k) => pattern.test(String(k)));
+    const key = Object.keys(row).find((k) => pattern.test(String(k)));
     if (key) return textOf(row[key]);
   }
   return "";
@@ -45,14 +44,10 @@ const parseIndex = (row, selectedPon) => {
   const raw = valueByKey(row, [/onu\s*index/i, /onuindex/i, /^index$/i, /^onu$/i, /onu\s*id/i]) || textOf(Object.values(row || {})[0]);
 
   let match = raw.match(/(?:gpon|epon)?\s*0\/(\d+)\s*[:/]\s*(\d+)/i);
-  if (match) {
-    return { pon: Number(match[1]), onuId: Number(match[2]), raw };
-  }
+  if (match) return { pon: Number(match[1]), onuId: Number(match[2]), raw };
 
   match = raw.match(/0\/(\d+)\s*[:/]\s*(\d+)/i);
-  if (match) {
-    return { pon: Number(match[1]), onuId: Number(match[2]), raw };
-  }
+  if (match) return { pon: Number(match[1]), onuId: Number(match[2]), raw };
 
   const numbers = raw.match(/\d+/g) || [];
   if (numbers.length >= 2) {
@@ -61,26 +56,20 @@ const parseIndex = (row, selectedPon) => {
   if (numbers.length === 1) {
     return { pon: Number(selectedPon), onuId: Number(numbers[0]), raw };
   }
-
   return { pon: Number(selectedPon), onuId: 0, raw };
 };
 
 const serialOf = (row) => {
   const direct = valueByKey(row, [/^sn$/i, /serial/i, /auth\s*info/i, /authinfo/i, /mac/i]);
   if (direct) return direct;
-
-  const candidate = Object.values(row || {})
-    .map(textOf)
-    .find((value) => /[a-z]{3,6}[0-9a-f]{6,12}/i.test(value));
-  return candidate || "";
+  return Object.values(row || {}).map(textOf).find((value) => /[a-z]{3,6}[0-9a-f]{6,12}/i.test(value)) || "";
 };
 
 const modelOf = (row) => valueByKey(row, [/onu\s*model/i, /^model$/i, /^type$/i, /device/i]);
 const profileOf = (row) => valueByKey(row, [/profile/i, /line\s*profile/i, /service\s*profile/i]);
 const modeOf = (row) => valueByKey(row, [/^mode$/i, /state/i, /status/i]);
 const vlanOf = (row) => valueByKey(row, [/vlan/i, /vid/i]);
-const descriptionOf = (row) => valueByKey(row, [/description/i, /name/i, /alias/i]);
-
+const descriptionOf = (row) => valueByKey(row, [/description/i, /^name$/i, /alias/i]);
 const opticalValue = (row, patterns) => valueByKey(row, patterns);
 
 const parseDbm = (value) => {
@@ -91,7 +80,6 @@ const parseDbm = (value) => {
 const rxVisual = (value) => {
   const n = parseDbm(value);
   if (n === null) return { pct: 0, label: "Sin lectura", cls: "text-slate-400", bar: "bg-slate-700" };
-  // Escala visual aproximada -35..-8 dBm. No pretende sustituir los umbrales del fabricante.
   const pct = Math.max(4, Math.min(100, ((n + 35) / 27) * 100));
   if (n >= -25) return { pct, label: "RX estable", cls: "text-emerald-300", bar: "bg-emerald-400" };
   if (n >= -28) return { pct, label: "RX medio", cls: "text-amber-300", bar: "bg-amber-400" };
@@ -123,6 +111,20 @@ const InfoBox = ({ icon: Icon, label, value, valueClass = "text-slate-100", mono
   </div>
 );
 
+const SummaryCard = ({ icon: Icon, label, value, valueClass = "text-slate-100" }) => (
+  <div className="rounded-2xl border border-slate-800 bg-slate-950/55 p-3.5">
+    <div className="flex items-center justify-between gap-2">
+      <div>
+        <p className="text-[9px] uppercase tracking-wider text-slate-500">{label}</p>
+        <p className={`text-xl font-bold font-mono mt-1 ${valueClass}`}>{value}</p>
+      </div>
+      <div className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-cyan-400">
+        <Icon className="w-4 h-4" />
+      </div>
+    </div>
+  </div>
+);
+
 export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefresh }) {
   const { API, token } = useAuth();
   const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
@@ -130,6 +132,7 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
   const [plans, setPlans] = useState([]);
   const [opticalRows, setOpticalRows] = useState([]);
   const [loadingExtra, setLoadingExtra] = useState(false);
+  const [refreshExtra, setRefreshExtra] = useState(0);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [details, setDetails] = useState({});
@@ -159,10 +162,9 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
         if (alive) setLoadingExtra(false);
       }
     };
-
     loadExtra();
     return () => { alive = false; };
-  }, [API, headers, router.id, pon]);
+  }, [API, headers, router.id, pon, refreshExtra]);
 
   useEffect(() => {
     setDetails({});
@@ -180,69 +182,61 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
     return map;
   }, [opticalRows, pon]);
 
-  const associatedClients = useMemo(
-    () => clients.filter((c) => !c.router_id || c.router_id === router.id),
-    [clients, router.id]
-  );
-
-  const findClient = (row, serial) => {
-    const rowBlob = norm(Object.values(row || {}).join(" "));
-    const serialNorm = norm(serial);
-
-    return associatedClients.find((client) => {
-      const clientSn = norm(client.onu_sn);
-      if (!clientSn) return false;
-      return (
-        (serialNorm && (serialNorm.includes(clientSn) || clientSn.includes(serialNorm))) ||
-        rowBlob.includes(clientSn)
-      );
-    }) || null;
-  };
-
-  const cards = useMemo(() => rows.map((row, index) => {
-    const idx = parseIndex(row, pon);
-    const optical = opticalById.get(idx.onuId) || {};
-    const serial = serialOf(row);
-    const client = findClient(row, serial);
-    const plan = client ? planById.get(client.plan_id) : null;
-
-    const rx = opticalValue(optical, [/rx\s*power/i, /rxpower/i, /^rx$/i]) || opticalValue(row, [/rx\s*power/i, /rxpower/i]);
-    const tx = opticalValue(optical, [/tx\s*power/i, /txpower/i, /^tx$/i]) || opticalValue(row, [/tx\s*power/i, /txpower/i]);
-    const temp = opticalValue(optical, [/temp/i, /temperature/i]);
-    const status = statusOf(row, rx);
-
-    const down = plan?.download_speed_mbps;
-    const up = plan?.upload_speed_mbps;
-    const speed = down || up ? `${down || 0}↓ / ${up || 0}↑ Mbps` : "";
-
-    return {
-      key: `${idx.pon}-${idx.onuId || index}`,
-      row,
-      pon: idx.pon || pon,
-      onuId: idx.onuId,
-      onuIndex: idx.raw,
-      serial: client?.onu_sn || serial,
-      model: modelOf(row),
-      profile: profileOf(row),
-      mode: modeOf(row),
-      vlan: vlanOf(row),
-      description: descriptionOf(row),
-      rx,
-      tx,
-      temp,
-      status,
-      client,
-      plan,
-      speed,
+  const cards = useMemo(() => {
+    const findClient = (row, serial) => {
+      const rowBlob = norm(Object.values(row || {}).join(" "));
+      const serialNorm = norm(serial);
+      return clients.find((client) => {
+        const clientSn = norm(client.onu_sn);
+        if (!clientSn) return false;
+        return (
+          (serialNorm && (serialNorm.includes(clientSn) || clientSn.includes(serialNorm))) ||
+          rowBlob.includes(clientSn)
+        );
+      }) || null;
     };
-  }), [rows, pon, opticalById, associatedClients, planById]);
+
+    return rows.map((row, index) => {
+      const idx = parseIndex(row, pon);
+      const optical = opticalById.get(idx.onuId) || {};
+      const serial = serialOf(row);
+      const client = findClient(row, serial);
+      const plan = client ? planById.get(client.plan_id) : null;
+      const rx = opticalValue(optical, [/rx\s*power/i, /rxpower/i, /^rx$/i]) || opticalValue(row, [/rx\s*power/i, /rxpower/i]);
+      const tx = opticalValue(optical, [/tx\s*power/i, /txpower/i, /^tx$/i]) || opticalValue(row, [/tx\s*power/i, /txpower/i]);
+      const status = statusOf(row, rx);
+      const down = plan?.download_speed_mbps;
+      const up = plan?.upload_speed_mbps;
+      const speed = down || up ? `${down || 0}↓ / ${up || 0}↑ Mbps` : "";
+
+      return {
+        key: `${idx.pon}-${idx.onuId || index}`,
+        row,
+        pon: idx.pon || pon,
+        onuId: idx.onuId,
+        onuIndex: idx.raw,
+        serial: client?.onu_sn || serial,
+        model: modelOf(row),
+        profile: profileOf(row),
+        mode: modeOf(row),
+        vlan: vlanOf(row),
+        description: descriptionOf(row),
+        rx,
+        tx,
+        status,
+        client,
+        plan,
+        speed,
+      };
+    });
+  }, [rows, pon, opticalById, clients, planById]);
 
   const filtered = useMemo(() => {
     const q = norm(search);
     return cards.filter((card) => {
       if (statusFilter !== "all" && card.status !== statusFilter) return false;
       if (!q) return true;
-      const haystack = norm([
+      return norm([
         card.client?.full_name,
         card.client?.dni_ruc,
         card.client?.ip_address,
@@ -253,14 +247,14 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
         card.onuIndex,
         card.onuId,
         card.plan?.name,
-      ].join(" "));
-      return haystack.includes(q);
+      ].join(" ")).includes(q);
     });
   }, [cards, search, statusFilter]);
 
   const summary = useMemo(() => ({
     total: cards.length,
     online: cards.filter((c) => c.status === "online").length,
+    offline: cards.filter((c) => c.status === "offline").length,
     linked: cards.filter((c) => c.client).length,
     weak: cards.filter((c) => {
       const n = parseDbm(c.rx);
@@ -283,10 +277,7 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
     try {
       const r = await axios.get(`${API}/routers/${router.id}/olt/onu_detail?pon=${pon}&onu=${card.onuId}`, { headers });
       if (!r.data?.ok) throw new Error(r.data?.error || "Sin detalle");
-      setDetails((prev) => ({
-        ...prev,
-        [card.key]: { open: true, info: r.data.info || {}, raw: r.data.raw || "" },
-      }));
+      setDetails((prev) => ({ ...prev, [card.key]: { open: true, info: r.data.info || {}, raw: r.data.raw || "" } }));
     } catch (e) {
       toast.error(e?.response?.data?.detail || e?.message || "No se pudo leer el detalle de la ONU");
     } finally {
@@ -299,9 +290,15 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
     setActionBusy(key);
     try {
       await onAction(action, card.onuId, card.serial);
+      setRefreshExtra((n) => n + 1);
     } finally {
       setActionBusy("");
     }
+  };
+
+  const refreshAll = async () => {
+    setRefreshExtra((n) => n + 1);
+    if (onRefresh) await onRefresh();
   };
 
   return (
@@ -327,7 +324,7 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
           {[
             ["all", `Todas ${summary.total}`],
             ["online", `Online ${summary.online}`],
-            ["offline", `Offline ${cards.filter((c) => c.status === "offline").length}`],
+            ["offline", `Offline ${summary.offline}`],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -337,11 +334,7 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
               {label}
             </button>
           ))}
-          <button
-            onClick={onRefresh}
-            title="Actualizar ONUs"
-            className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800"
-          >
+          <button onClick={refreshAll} title="Actualizar ONUs y potencia" className="p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800">
             <RefreshCw className={`w-3.5 h-3.5 ${loadingExtra ? "animate-spin text-cyan-400" : ""}`} />
           </button>
         </div>
@@ -355,7 +348,11 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
             const detail = details[card.key];
             const detailInfo = detail?.info || {};
             const detailVlan = valueByKey(detailInfo, [/vlan/i, /vid/i]);
+            const detailModel = valueByKey(detailInfo, [/model/i, /type/i]);
+            const detailSerial = valueByKey(detailInfo, [/^sn$/i, /serial/i, /auth/i]);
             const shownVlan = detailVlan || card.vlan;
+            const shownModel = detailModel || card.model;
+            const shownSerial = card.client?.onu_sn || detailSerial || card.serial;
             const clientName = card.client?.full_name || card.description || "ONU sin cliente asociado";
             const clientSub = card.client
               ? `${card.plan?.name || card.client.plan_name || "Sin plan"}${card.speed ? ` · ${card.speed}` : ""}`
@@ -382,8 +379,8 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <InfoBox icon={Layers} label="Puerto PON" value={`0/${card.pon}`} />
                     <InfoBox icon={Hash} label="ONU ID" value={card.onuId || "—"} />
-                    <InfoBox icon={Fingerprint} label="Serie / SN" value={card.serial || "—"} />
-                    <InfoBox icon={Server} label="Modelo ONU" value={card.model || "—"} />
+                    <InfoBox icon={Fingerprint} label="Serie / SN" value={shownSerial || "—"} />
+                    <InfoBox icon={Server} label="Modelo ONU" value={shownModel || "—"} />
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -465,17 +462,3 @@ export default function OnuCardsPanel({ router, pon, rows = [], onAction, onRefr
     </div>
   );
 }
-
-const SummaryCard = ({ icon: Icon, label, value, valueClass = "text-slate-100" }) => (
-  <div className="rounded-2xl border border-slate-800 bg-slate-950/55 p-3.5">
-    <div className="flex items-center justify-between gap-2">
-      <div>
-        <p className="text-[9px] uppercase tracking-wider text-slate-500">{label}</p>
-        <p className={`text-xl font-bold font-mono mt-1 ${valueClass}`}>{value}</p>
-      </div>
-      <div className="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-cyan-400">
-        <Icon className="w-4 h-4" />
-      </div>
-    </div>
-  </div>
-);

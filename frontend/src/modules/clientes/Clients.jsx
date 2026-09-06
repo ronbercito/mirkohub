@@ -140,7 +140,7 @@ export default function Clients({ onSelectClient }) {
 
   const handleSaveClient = async (e) => {
     e.preventDefault();
-    const payload = { ...formData, optical_power_dbm: formData.optical_power_dbm === "" ? null : formData.optical_power_dbm };
+    const payload = { ...formData, optical_power_dbm: formData.optical_power_dbm === "" ? null : formData.optical_power_dbm, latitude: formData.latitude === "" || formData.latitude == null ? 0 : Number(formData.latitude), longitude: formData.longitude === "" || formData.longitude == null ? 0 : Number(formData.longitude) };
     try {
       const headers = { Authorization: `Bearer ${token}` };
       const res = selectedClient

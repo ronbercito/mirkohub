@@ -120,6 +120,8 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
 
     nap_box = await db.get(NapBox, c.nap_box_id) if c.nap_box_id else None
     if nap_box:
+        if not c.zone_id or nap_box.zone_id != c.zone_id:
+            raise HTTPException(status_code=422, detail="La caja NAP debe pertenecer a la misma zona del cliente.")
         if c.nap_port is not None and not 1 <= c.nap_port <= nap_box.ports:
             raise HTTPException(status_code=422, detail=f"El puerto NAP debe estar entre 1 y {nap_box.ports}.")
         if c.nap_port is not None:

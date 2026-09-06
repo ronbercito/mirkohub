@@ -11,7 +11,8 @@ import React, { useState } from "react";
 import OltForm from "./OltForm";
 import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
-import { Server } from "lucide-react";
+import { Server, MapPin } from "lucide-react";
+import CoordinatesPicker from "./CoordinatesPicker";
 import { toast } from "sonner";
 
 const EMPTY = { name: "", device_type: "mikrotik", ip_address: "", port: 8728, use_ssl: false, username: "admin", password: "", model: "", location: "", latitude: "", longitude: "" };
@@ -21,6 +22,7 @@ export default function RouterForm({ initial, onClose, onSaved }) {
   const isEdit = Boolean(initial?.id);
   const [form, setForm] = useState({ ...EMPTY, ...initial, password: "" });
   const [saving, setSaving] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
   const isOlt = form.device_type === "olt";
   const changeType = (t) => setForm((f) => ({ ...f, device_type: t, port: t === "olt" ? 23 : 8728 }));
   if (isOlt) {
@@ -118,6 +120,8 @@ export default function RouterForm({ initial, onClose, onSaved }) {
             <div><label className="block text-slate-300 font-semibold mb-1">Latitud</label><input type="number" step="any" value={form.latitude ?? ""} onChange={(e) => set("latitude", e.target.value === "" ? "" : Number(e.target.value))} placeholder="-8.0679" className={`${input} font-mono`} /></div>
             <div><label className="block text-slate-300 font-semibold mb-1">Longitud</label><input type="number" step="any" value={form.longitude ?? ""} onChange={(e) => set("longitude", e.target.value === "" ? "" : Number(e.target.value))} placeholder="-78.9859" className={`${input} font-mono`} /></div>
           </div>
+          <button type="button" onClick={() => setShowPicker(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20"><MapPin className="h-4 w-4" /> Elegir coordenadas en el mapa</button>
+
           <p className="text-[11px] text-slate-500 bg-slate-950/60 border border-slate-800 rounded-lg p-2">
             En el MikroTik: <span className="font-mono text-slate-300">/ip service enable api</span> (o api-ssl) y un usuario con políticas <span className="font-mono text-slate-300">read, write, api</span>. Permite el acceso desde la IP de este servidor.
           </p>
@@ -130,6 +134,7 @@ export default function RouterForm({ initial, onClose, onSaved }) {
           </div>
         </form>
       </div>
+      {showPicker && <CoordinatesPicker title={`Ubicación · ${form.name || "MikroTik"}`} latitude={form.latitude} longitude={form.longitude} onClose={() => setShowPicker(false)} onApply={({ lat, lng }) => setForm((value) => ({ ...value, latitude: lat, longitude: lng }))} />}
     </div>
   );
 }

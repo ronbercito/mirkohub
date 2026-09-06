@@ -13,8 +13,10 @@ import Dashboard from "../../modules/inicio/Dashboard";
 import Network from "../../modules/red/Network";
 import IPv4Networks from "../../modules/red/ipv4/IPv4Networks";
 import NapBoxes from "../../modules/red/nap_boxes/NapBoxes";
+import Monitoring from "../../modules/red/monitoring/Monitoring";
 import Plans from "../../modules/planes/Plans";
 import Users from "../../modules/clientes/usuarios/Users";
+import Zones from "../../modules/clientes/zonas/Zones";
 import Billing from "../../modules/facturacion/Billing";
 import Hotspot from "../../modules/hotspot/Hotspot";
 import Tasks from "../../modules/tareas/Tasks";
@@ -40,11 +42,15 @@ export default function Layout() {
         return <IPv4Networks />;
       case "nap_boxes":
         return <NapBoxes />;
+      case "monitoring":
+        return <Monitoring />;
       case "servicios":
         return <Plans />;
       case "clientes":
       case "client_users":
         return <Users />;
+      case "client_zones":
+        return <Zones />;
       case "facturacion":
         return <Billing />;
       case "hotspot":

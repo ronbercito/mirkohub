@@ -1,65 +1,45 @@
 /**
  * Archivo: frontend/src/modules/red/components/olt-tabs/OltOnusTab.jsx
  * Pertenece a: Red > OLT > pestaña "ONUs".
- * Función: Renderiza exclusivamente el inventario de ONUs y carga los contadores
- *          superiores (total, online, offline y con nombre) desde su endpoint aislado.
- * Regla: Cualquier cambio visual o funcional de la pestaña ONUs debe entrar por este
- *        archivo o por sus componentes hijos; no modificar otras pestañas para esto.
+ * Función: Orquesta exclusivamente la pestaña ONUs: enlaza sus contadores aislados
+ *          y el inventario gráfico ya existente, sin tocar otras pestañas.
+ * Regla: Cada bloque nuevo de ONUs debe vivir en su propio archivo hijo cuando tenga
+ *        lógica propia. No modificar Resumen, Puertos PON, Auto-find, Óptica o Consola.
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import axios from "axios";
-import { useAuth } from "../../../../context/AuthContext";
+import React from "react";
 import OnuCardsPanelV2 from "../OnuCardsPanelV2";
+import OnuSummaryCounters from "./onu/OnuSummaryCounters";
 
 export default function OltOnusTab({ router, pon, res, onAction, onRefresh }) {
-  const { API, token } = useAuth();
-  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
-  const total = Array.isArray(res?.rows) ? res.rows.length : 0;
-  const [summaryCounts, setSummaryCounts] = useState(null);
-
-  const loadSummary = useCallback(async () => {
-    if (!router?.id) return;
-    try {
-      const response = await axios.get(
-        `${API}/routers/${router.id}/olt/onu-summary?pon=${pon}&total=${total}`,
-        { headers }
-      );
-      if (response.data?.ok) {
-        setSummaryCounts({
-          total,
-          online: Number(response.data.online || 0),
-          offline: Number(response.data.offline || 0),
-          named: Number(response.data.named || 0),
-          source: response.data.source || "none",
-        });
-      } else {
-        setSummaryCounts(null);
-      }
-    } catch (error) {
-      console.warn("No se pudo cargar el resumen ONU del PON", error);
-      setSummaryCounts(null);
-    }
-  }, [API, headers, router?.id, pon, total]);
-
-  useEffect(() => {
-    setSummaryCounts(null);
-    loadSummary();
-  }, [loadSummary]);
-
-  const refresh = useCallback(async () => {
-    if (onRefresh) await onRefresh();
-    await loadSummary();
-  }, [onRefresh, loadSummary]);
+  const rows = res?.rows || [];
 
   return (
-    <OnuCardsPanelV2
-      router={router}
-      pon={pon}
-      rows={res?.rows || []}
-      raw={res?.raw || ""}
-      summaryCounts={summaryCounts}
-      onAction={onAction}
-      onRefresh={refresh}
-    />
+    <div className="space-y-4 onu-tab-isolated">
+      <OnuSummaryCounters
+        router={router}
+        pon={pon}
+        total={rows.length}
+      />
+
+      {/*
+        OnuCardsPanelV2 todavía conserva su resumen antiguo por compatibilidad.
+        Lo ocultamos SOLO dentro de esta pestaña para no editar ese componente
+        mientras resolvemos los contadores por partes.
+      */}
+      <style>{`
+        .onu-tab-isolated [data-testid="onu-cards-panel-v3"] > div:first-child {
+          display: none;
+        }
+      `}</style>
+
+      <OnuCardsPanelV2
+        router={router}
+        pon={pon}
+        rows={rows}
+        raw={res?.raw || ""}
+        onAction={onAction}
+        onRefresh={onRefresh}
+      />
+    </div>
   );
 }

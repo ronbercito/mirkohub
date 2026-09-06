@@ -10,6 +10,7 @@ Trabaja con: backend/app/models/client.py, plan.py, router.py, invoice.py, ticke
              frontend/src/modules/clientes/Clients.jsx
 """
 from datetime import datetime, timedelta, timezone
+import ipaddress
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,6 +24,7 @@ from app.integrations.mikrotik import service as mt
 from app.integrations.olt import service as olt
 from app.models.client import Client
 from app.models.invoice import Invoice
+from app.models.ipv4_network import IPv4Network
 from app.models.plan import Plan
 from app.models.router import Router
 from app.models.setting import Setting
@@ -56,6 +58,21 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
         raise HTTPException(status_code=422, detail="El equipo seleccionado no es un MikroTik.")
     if not rtr.password:
         raise HTTPException(status_code=422, detail="El MikroTik seleccionado no tiene credenciales API configuradas.")
+
+    ipv4_network = await db.get(IPv4Network, c.ipv4_network_id) if c.ipv4_network_id else None
+    if ipv4_network:
+        if ipv4_network.router_id != rtr.id:
+            raise HTTPException(status_code=422, detail="La red IPv4 seleccionada pertenece a otro MikroTik.")
+        if c.ip_address:
+            try:
+                address = ipaddress.ip_address(c.ip_address.strip())
+                network = ipaddress.ip_network(ipv4_network.cidr)
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail="La IP del cliente no es válida.") from error
+            if address not in network or address in (network.network_address, network.broadcast_address):
+                raise HTTPException(status_code=422, detail=f"La IP debe ser un host válido dentro de {ipv4_network.cidr}.")
+    elif c.connection_type in ("IP Estática", "DHCP") and c.ip_address:
+        raise HTTPException(status_code=422, detail="Selecciona la red IPv4 correspondiente a la IP del cliente.")
 
     c.plan_name, c.plan_price = plan.name, plan.price
     c.router_name = rtr.name

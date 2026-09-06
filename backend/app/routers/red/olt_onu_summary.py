@@ -13,12 +13,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.security import get_current_user
 from app.core.utils import get_or_404
 from app.integrations.olt import service as olt_service
 from app.models.router import Router
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 _INDEX_RE_TEMPLATE = r"(?:GPON|EPON)?\s*0/{pon}\s*[:/]\s*(\d{{1,3}})"
 _BAD_RE = re.compile(
@@ -74,7 +75,6 @@ def _parse_optical_online(raw: str, pon: int):
         onu_id = _onu_id(original, pon)
         if not onu_id:
             continue
-        # Exige una lectura numérica razonable, normalmente expresada en dBm.
         if re.search(r"-?\d+(?:\.\d+)?\s*(?:dBm)?\b", original, re.IGNORECASE):
             online.add(onu_id)
     return online
@@ -127,7 +127,6 @@ async def onu_summary(
 
     try:
         async with olt_service.connect(olt) as cli:
-            # Global config: algunos firmwares VSOL exponen aquí estado y descripción.
             cfg = await cli.run("configure terminal", raise_on_error=False)
             commands.append("configure terminal")
 
@@ -142,7 +141,6 @@ async def onu_summary(
                 if _valid(desc_all):
                     description_raw = desc_all
 
-            # PON seleccionado: comando documentado para V1600G GPON.
             iface = f"interface gpon 0/{pon}"
             iface_raw = await cli.run(iface, raise_on_error=False)
             commands.append(iface)
@@ -151,7 +149,6 @@ async def onu_summary(
                 status_pon = await cli.run("show onu info", raise_on_error=False)
                 commands.append("show onu info")
                 if _valid(status_pon):
-                    # Preferimos el estado del PON específico si realmente trae estados.
                     on, off = _parse_status(status_pon, pon)
                     if on or off:
                         status_raw = status_pon
@@ -162,7 +159,6 @@ async def onu_summary(
                     optical_raw = optical
 
     except Exception as exc:
-        # Esta lectura es auxiliar; no debe tumbar el estado general de la OLT.
         return {
             "ok": False,
             "error": str(exc),

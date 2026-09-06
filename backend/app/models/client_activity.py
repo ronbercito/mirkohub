@@ -7,11 +7,23 @@ from sqlalchemy import String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base, new_id, now_iso
 
+
 class ClientActivity(Base):
     __tablename__ = "client_activities"
+
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     client_id: Mapped[str] = mapped_column(String(36), index=True)
     action: Mapped[str] = mapped_column(String(80))
     detail: Mapped[str] = mapped_column(Text, default="")
     operator_name: Mapped[str] = mapped_column(String(120), default="Sistema")
     created_at: Mapped[str] = mapped_column(String(40), default=now_iso)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "client_id": self.client_id,
+            "action": self.action,
+            "detail": self.detail,
+            "operator_name": self.operator_name,
+            "created_at": self.created_at,
+        }

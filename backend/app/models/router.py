@@ -25,6 +25,8 @@ class Router(Base):
     password: Mapped[str] = mapped_column(String(255), default="")
     model: Mapped[str] = mapped_column(String(120), default="")
     location: Mapped[str] = mapped_column(String(150), default="")
+    latitude: Mapped[float] = mapped_column(Float, default=0.0)
+    longitude: Mapped[float] = mapped_column(Float, default=0.0)
     # Solo OLT: acceso CLI
     protocol: Mapped[str] = mapped_column(String(10), default="telnet")  # telnet | ssh
     enable_password: Mapped[str] = mapped_column(String(255), default="")

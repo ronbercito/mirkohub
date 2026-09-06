@@ -12,7 +12,8 @@
 import React, { useState } from "react";
 import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
-import { Eye, EyeOff, Radio, HelpCircle } from "lucide-react";
+import { Eye, EyeOff, Radio, HelpCircle, MapPin } from "lucide-react";
+import CoordinatesPicker from "./CoordinatesPicker";
 import { toast } from "sonner";
 
 export const OLT_MODELS = [
@@ -48,6 +49,7 @@ export default function OltForm({ initial, onClose, onSaved, onSwitchType }) {
   const [form, setForm] = useState({ ...OLT_EMPTY, ...initial, password: "", enable_password: "" });
   const [showPass, setShowPass] = useState(false);
   const [saving, setSaving] = useState("");
+  const [showPicker, setShowPicker] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const input = "w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 text-xs focus:border-cyan-500 outline-none";
 
@@ -134,6 +136,8 @@ export default function OltForm({ initial, onClose, onSaved, onSwitchType }) {
           <Row label="Comunidad SNMP de Lectura"><input data-testid="olt-snmp-ro" value={form.snmp_community} onChange={(e) => set("snmp_community", e.target.value)} className={`${input} font-mono`} /></Row>
           <Row label="Comunidad SNMP Lectura y Escritura"><input data-testid="olt-snmp-rw" value={form.snmp_community_rw} onChange={(e) => set("snmp_community_rw", e.target.value)} className={`${input} font-mono`} /></Row>
 
+          <button type="button" onClick={() => setShowPicker(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-2.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20"><MapPin className="h-4 w-4" /> Elegir coordenadas en el mapa</button>
+
           <div className="border-t border-slate-800 pt-3" />
           <div className="grid grid-cols-1 sm:grid-cols-[190px_1fr_auto_1fr] gap-1 sm:gap-4 items-center">
             <label className="text-xs text-slate-300 font-semibold">Usuario</label>
@@ -170,6 +174,7 @@ export default function OltForm({ initial, onClose, onSaved, onSwitchType }) {
           </button>
         </div>
       </div>
+      {showPicker && <CoordinatesPicker title={`Ubicación · ${form.name || "OLT"}`} latitude={form.latitude} longitude={form.longitude} onClose={() => setShowPicker(false)} onApply={({ lat, lng }) => setForm((value) => ({ ...value, latitude: lat, longitude: lng }))} />}
     </div>
   );
 }

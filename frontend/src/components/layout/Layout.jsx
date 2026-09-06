@@ -11,6 +11,7 @@ import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
 import Dashboard from "../../modules/inicio/Dashboard";
 import Network from "../../modules/red/Network";
+import IPv4Networks from "../../modules/red/IPv4Networks";
 import Plans from "../../modules/planes/Plans";
 import Clients from "../../modules/clientes/Clients";
 import Billing from "../../modules/facturacion/Billing";
@@ -31,6 +32,8 @@ export default function Layout() {
         return <Dashboard setActiveTab={setActiveTab} />;
       case "red":
         return <Network />;
+      case "red_ipv4":
+        return <IPv4Networks />;
       case "servicios":
         return <Plans />;
       case "clientes":

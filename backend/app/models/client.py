@@ -41,6 +41,8 @@ class Client(Base):
     router_name: Mapped[str] = mapped_column(String(120), default="")
     ipv4_network_id: Mapped[str] = mapped_column(String(36), default="", index=True)
     nap_box: Mapped[str] = mapped_column(String(80), default="")
+    nap_box_id: Mapped[str] = mapped_column(String(36), default="", index=True)
+    nap_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     optical_power_dbm: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     status: Mapped[str] = mapped_column(String(30), default="active")  # active | suspended | canceled | pending_install

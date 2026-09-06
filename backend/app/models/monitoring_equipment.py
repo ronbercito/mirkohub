@@ -19,6 +19,8 @@ class MonitoringEquipment(Base):
     manufacturer: Mapped[str] = mapped_column(String(80), default="")
     model_name: Mapped[str] = mapped_column(String(120), default="")
     location: Mapped[str] = mapped_column(String(160), default="")
+    latitude: Mapped[float] = mapped_column(Float, default=0.0)
+    longitude: Mapped[float] = mapped_column(Float, default=0.0)
     details: Mapped[str] = mapped_column(String(255), default="")
     status: Mapped[str] = mapped_column(String(20), default="unknown")
     last_ping_at: Mapped[str] = mapped_column(String(40), default="")

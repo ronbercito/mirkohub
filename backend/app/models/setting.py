@@ -28,6 +28,9 @@ DEFAULT_SETTINGS = {
     "bbva_account": "",
     "mikrotik_cut_list": "morosos",
     "google_maps_api_key": "",
+    "system_alert_emails": [],
+    "system_alert_phones": [],
+    "payment_report_emails": [],
 }
 
 

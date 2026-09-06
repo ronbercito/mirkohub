@@ -630,7 +630,7 @@ export default function Clients({ onSelectClient }) {
                   <label className="block text-slate-300 font-semibold mb-1">Caja NAP</label>
                   <select
                     value={formData.nap_box_id}
-                    onChange={(e) => setFormData({ ...formData, nap_box_id: e.target.value, nap_port: "" })}
+                    onChange={(e) => setFormData({ ...formData, nap_box_id: e.target.value, nap_port: "", nap_box: "" })}
                     className="w-full p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100"
                   >
                     <option value="">Sin caja NAP asignada</option>

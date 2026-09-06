@@ -52,9 +52,10 @@ export default function Settings() {
     e.preventDefault();
     setSaving(true);
     try {
-      await axios.put(`${API}/settings`, settings, {
+      const response = await axios.put(`${API}/settings`, settings, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      window.dispatchEvent(new CustomEvent("fibraz-company-name", { detail: { companyName: response.data.company_name } }));
       toast.success("Configuración del ISP actualizada correctamente");
     } catch (e) {
       toast.error("Error al guardar ajustes");
@@ -67,7 +68,7 @@ export default function Settings() {
     <div className="space-y-6 animate-in fade-in duration-200">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-          <SettingsIcon className="w-6 h-6 text-cyan-400" /> Ajustes Generales del ISP FibraZ
+          <SettingsIcon className="w-6 h-6 text-cyan-400" /> Ajustes Generales del ISP {settings.company_name || "FibraZ"}
         </h2>
         <p className="text-xs text-slate-400 mt-0.5">
           Datos de facturación, cuentas de recaudación (Yape/BCP) y reglas de corte por mora

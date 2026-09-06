@@ -76,11 +76,32 @@ export default function ClientRegistrationWizard({ selectedClient, formData, set
     setStep((value) => Math.min(3, value + 1));
   };
 
+  const submit = (event) => {
+    event.preventDefault();
+    if (!formData.plan_id || !formData.router_id) {
+      toast.error("Selecciona el plan y el MikroTik del abonado.");
+      return;
+    }
+    if (formData.connection_type === "PPPoE" && (!formData.pppoe_user?.trim() || !formData.pppoe_password?.trim())) {
+      toast.error("Ingresa el usuario y la clave PPPoE.");
+      return;
+    }
+    if (formData.technology === "wireless" && !formData.monitoring_equipment_id) {
+      toast.error("Para un cliente inalámbrico selecciona el equipo de monitoreo al que se conectará.");
+      return;
+    }
+    if (formData.technology === "fiber" && (!formData.nap_box_id || formData.nap_port === "" || formData.nap_port == null)) {
+      toast.error("Para fibra selecciona una Caja NAP y un puerto libre.");
+      return;
+    }
+    onSubmit(event);
+  };
+
   return <><div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm overflow-y-auto p-4">
     <div className="max-w-5xl mx-auto my-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-visible">
       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800"><div><h3 className="text-lg font-bold text-slate-100">{selectedClient ? "Editar usuario" : "Nuevo usuario"}</h3><p className="text-xs text-slate-400">Registro guiado de abonado y aprovisionamiento de servicio.</p></div><button onClick={onClose} className="text-slate-400 hover:text-slate-100"><X /></button></div>
       <div className="flex overflow-x-auto bg-slate-950/40"><Step number="1" label="Datos personales" subtitle="Nombre, dirección y contacto" active={step === 1} done={step > 1} onClick={() => setStep(1)} /><Step number="2" label="Facturación" subtitle="Cobro y primera factura" active={step === 2} done={step > 2} onClick={() => setStep(2)} /><Step number="3" label="Servicio" subtitle="Plan, red, NAP y MikroTik" active={step === 3} done={false} onClick={() => setStep(3)} /></div>
-      <form onSubmit={onSubmit}>
+      <form noValidate onSubmit={submit}>
         <div className="p-6 min-h-[400px]">
           {step === 1 && <div className="max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4"><Field label="Nombre completo / Razón social *"><input required value={formData.full_name} onChange={e=>setFormData({...formData,full_name:e.target.value})} placeholder="Ej. Carlos Pérez / Empresa SAC" /></Field><Field label="DNI / RUC *"><input required value={formData.dni_ruc} onChange={e=>setFormData({...formData,dni_ruc:e.target.value})} placeholder="DNI o RUC" /></Field><div className="md:col-span-2"><Field label="Dirección principal *"><input required value={formData.address} onChange={e=>setFormData({...formData,address:e.target.value})} placeholder="Av. / Jr. / Mz. Lt. / distrito" /></Field></div><Field label="Celular / WhatsApp *"><input required value={formData.phone} onChange={e=>setFormData({...formData,phone:e.target.value})} placeholder="987654321" /></Field><Field label="Correo electrónico"><input type="email" value={formData.email || ""} onChange={e=>setFormData({...formData,email:e.target.value})} placeholder="cliente@correo.com" /></Field><div className="md:col-span-2"><Field label="Referencia de instalación"><input value={formData.reference || ""} onChange={e=>setFormData({...formData,reference:e.target.value})} placeholder="Casa de dos pisos, portón negro..." /></Field></div><Field label="Coordenadas (latitud)"><input type="number" step="any" value={formData.latitude ?? ""} onChange={e=>setFormData({...formData,latitude:e.target.value})} placeholder="-8.0679" /></Field><Field label="Coordenadas (longitud)"><input type="number" step="any" value={formData.longitude ?? ""} onChange={e=>setFormData({...formData,longitude:e.target.value})} placeholder="-78.9859" /></Field><div className="md:col-span-2"><button type="button" onClick={() => setShowCoordinatesPicker(true)} className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2.5 text-xs font-bold text-cyan-300 hover:bg-cyan-500/20"><MapPin className="w-4 h-4" /> Elegir coordenadas en el mapa</button><p className="mt-1 text-[10px] text-slate-500">Mueve el marcador o haz clic en el punto de instalación.</p></div><div className="md:col-span-2 relative z-50 text-xs text-slate-300 font-semibold space-y-1"><span>Fecha de instalación</span><div className="flex gap-2"><input required readOnly value={formatDate(formData.installation_date)} placeholder="Selecciona una fecha" onClick={() => setDatePickerOpen(!datePickerOpen)} className="flex-1 cursor-pointer p-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 font-normal" /><button type="button" onClick={() => setDatePickerOpen(!datePickerOpen)} className="px-3 rounded-xl bg-slate-800 border border-slate-700 text-cyan-300 hover:bg-slate-700" title="Elegir fecha"><CalendarDays className="w-4 h-4" /></button></div>{datePickerOpen && <CalendarPicker value={formData.installation_date} month={calendarMonth} onMonthChange={setCalendarMonth} onSelect={(date) => { setFormData({...formData, installation_date: date}); setDatePickerOpen(false); }} />}</div></div>}
           {step === 2 && <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5">

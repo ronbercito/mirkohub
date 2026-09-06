@@ -6,13 +6,46 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useAuth } from "../../context/AuthContext";
-import { Settings as SettingsIcon, Save, Building2, Phone, Mail, DollarSign, ShieldAlert, Smartphone } from "lucide-react";
+import { Settings as SettingsIcon, Save, Building2, ShieldAlert, Smartphone, Users, MailCog, FileText, ReceiptText, Landmark, Code2, UserRound, BellRing, Headphones, HeartPulse, Upload, Repeat2, LayoutTemplate, MessageSquare, MapPinned, ContactRound, Cloud, Database, Clock3, ScrollText, Wrench, Server, RefreshCw, KeyRound, BadgeInfo } from "lucide-react";
 import { toast } from "sonner";
+
+const SECTIONS = [
+  { id: "general", label: "General", icon: SettingsIcon, description: "Empresa, cobros y corte" },
+  { id: "staff", label: "Gestión personal", icon: Users, description: "Usuarios y permisos" },
+  { id: "mail", label: "Servidor de correo", icon: MailCog, description: "SMTP y envío" },
+  { id: "billing", label: "Facturación", icon: FileText, description: "Reglas y comprobantes" },
+  { id: "electronic", label: "Facturación electrónica", icon: ReceiptText, description: "SUNAT y series" },
+  { id: "payments", label: "Pasarelas de pago", icon: Landmark, description: "Cobros en línea" },
+  { id: "templates", label: "Editor plantillas", icon: Code2, description: "Diseños y mensajes" },
+  { id: "portal", label: "Portal cliente", icon: UserRound, description: "Acceso de abonados" },
+  { id: "push", label: "Notificaciones Push", icon: BellRing, description: "Avisos al instante" },
+  { id: "tickets", label: "Tickets", icon: Headphones, description: "Soporte y atención" },
+  { id: "zendesk", label: "Zendesk Support", icon: HeartPulse, description: "Integración externa" },
+  { id: "blacklist", label: "Monitor Blacklist", icon: ShieldAlert, description: "Revisión de IPs" },
+  { id: "import", label: "Importar clientes", icon: Upload, description: "Carga masiva" },
+  { id: "bulk", label: "Cambios masivos", icon: Repeat2, description: "Actualizar registros" },
+  { id: "config_templates", label: "Plantillas configuración", icon: LayoutTemplate, description: "Ajustes reutilizables" },
+  { id: "invoice_messages", label: "Mensajes facturas", icon: MessageSquare, description: "Textos de cobro" },
+  { id: "locations", label: "Ubicaciones", icon: MapPinned, description: "Zonas y oficinas" },
+  { id: "custom_fields", label: "Campos personalizados", icon: ContactRound, description: "Datos adicionales" },
+  { id: "messaging", label: "Mensajería", icon: MessageSquare, description: "Canales de contacto" },
+  { id: "cloud", label: "Cloud", icon: Cloud, description: "Sincronización" },
+  { id: "google", label: "Google", icon: BadgeInfo, description: "Servicios conectados" },
+  { id: "database", label: "Base de datos", icon: Database, description: "Respaldo y datos" },
+  { id: "crontab", label: "Crontab", icon: Clock3, description: "Tareas programadas" },
+  { id: "logs", label: "Logs", icon: ScrollText, description: "Registro del sistema" },
+  { id: "system", label: "Sistema", icon: Wrench, description: "Preferencias técnicas" },
+  { id: "server", label: "Servidor", icon: Server, description: "Estado y servicios" },
+  { id: "migrate", label: "Migrar", icon: RefreshCw, description: "Transferir datos" },
+  { id: "freeradius", label: "FreeRADIUS", icon: KeyRound, description: "Autenticación de red" },
+  { id: "license", label: "Licencia", icon: BadgeInfo, description: "Información de licencia" },
+];
 
 export default function Settings() {
   const { API, token } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [activeSection, setActiveSection] = useState("general");
 
   const [settings, setSettings] = useState({
     company_name: "",
@@ -85,14 +118,25 @@ export default function Settings() {
     <div className="space-y-6 animate-in fade-in duration-200">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
-          <SettingsIcon className="w-6 h-6 text-cyan-400" /> Ajustes Generales del ISP {settings.company_name || "MikroHub"}
+          <SettingsIcon className="w-6 h-6 text-cyan-400" /> Ajustes · {settings.company_name || "MikroHub"}
         </h2>
-        <p className="text-xs text-slate-400 mt-0.5">
-          Datos de facturación, cuentas de recaudación (Yape/BCP) y reglas de corte por mora
-        </p>
+        <p className="text-xs text-slate-400 mt-0.5">Selecciona una categoría para administrar la configuración del sistema.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {SECTIONS.map((section) => {
+          const Icon = section.icon;
+          const active = activeSection === section.id;
+          return <button key={section.id} type="button" onClick={() => setActiveSection(section.id)}
+            className={`group min-h-28 rounded-2xl border p-4 text-left transition-all hover:-translate-y-0.5 ${active ? "border-cyan-400 bg-cyan-500/15 shadow-lg shadow-cyan-950/40" : "border-slate-800 bg-slate-900 hover:border-slate-700 hover:bg-slate-800"}`}>
+            <span className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${active ? "bg-cyan-500 text-white" : "bg-slate-800 text-cyan-300 group-hover:bg-slate-700"}`}><Icon className="h-5 w-5" /></span>
+            <span className="block text-xs font-bold text-slate-100">{section.label}</span>
+            <span className="mt-1 block text-[10px] leading-tight text-slate-500">{section.description}</span>
+          </button>;
+        })}
+      </div>
+
+      {activeSection === "general" ? <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
         {/* Company Info Box */}
         <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-300 pb-2 border-b border-slate-800 flex items-center gap-2">
@@ -272,7 +316,18 @@ export default function Settings() {
             {saving ? "Guardando..." : "Guardar Cambios"}
           </button>
         </div>
-      </form>
+      </form> : <section className="max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
+        {(() => {
+          const section = SECTIONS.find((item) => item.id === activeSection);
+          const Icon = section?.icon || SettingsIcon;
+          return <div className="text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-300"><Icon className="h-7 w-7" /></div>
+            <h3 className="mt-4 text-lg font-bold text-slate-100">{section?.label}</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm text-slate-400">Este acceso ya está organizado en Ajustes. Su configuración se habilitará en una próxima mejora, sin modificar la información actual del sistema.</p>
+            <button type="button" onClick={() => setActiveSection("general")} className="mt-5 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700">Volver a General</button>
+          </div>;
+        })()}
+      </section>}
     </div>
   );
 }

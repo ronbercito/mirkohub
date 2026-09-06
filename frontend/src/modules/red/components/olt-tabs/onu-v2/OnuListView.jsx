@@ -4,15 +4,18 @@
  * Función: Muestra la lista principal de ONUs con búsqueda, filtros y acciones.
  * Regla: SOLO presenta datos ya canónicos recibidos de onus-v2. No interpreta salida CLI.
  * Alcance: Solo la tabla de lista; oculta el serial sin eliminarlo de búsquedas ni acciones.
- * No modifica el backend, la adquisición RX ni las otras pestañas.
+ * Delega RX a OnuPowerCell y limita el seguimiento a una ONU seleccionada.
+ * No modifica backend, inventario ni otras pestañas.
  */
 import React, { useMemo, useState } from "react";
+import OnuPowerCell from "./OnuPowerCell";
 import { CheckCircle2, Power, RotateCw, Search, Trash2 } from "lucide-react";
 
 const text = (v) => String(v ?? "").trim();
 const norm = (v) => text(v).toLowerCase().replace(/[^a-z0-9]/g, "");
 
-export default function OnuListView({ onus = [], onAction }) {
+export default function OnuListView({ onus = [], onAction, routerId }) {
+  const [activePower, setActivePower] = useState(null);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState("");
@@ -54,6 +57,7 @@ export default function OnuListView({ onus = [], onAction }) {
 
   return (
     <div className="space-y-3">
+      <p className="text-[10px] text-slate-400">RX bajo demanda: selecciona Consultar / seguir. Una ONU, cada 30 s tras la lectura; pausa al ocultar la página.</p>
       <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
         <div className="relative w-full xl:max-w-xl">
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -115,7 +119,7 @@ export default function OnuListView({ onus = [], onAction }) {
                 <td className="px-3 py-3 border-b border-slate-800 text-xs font-mono">{onu.model || "—"}</td>
                 <td className="px-3 py-3 border-b border-slate-800 text-xs font-mono">{onu.profile || "—"}</td>
                 <td className="px-3 py-3 border-b border-slate-800 text-xs">{onu.auth_mode || "—"}</td>
-                <td className="px-3 py-3 border-b border-slate-800 text-xs font-mono">{onu.rx_power || "—"}</td>
+                <td className="px-3 py-3 border-b border-slate-800 text-xs font-mono"><OnuPowerCell routerId={routerId} pon={onu.pon_id} onu={onu.onu_id} active={activePower === onu.onu_id} onToggle={() => setActivePower((id) => id === onu.onu_id ? null : onu.onu_id)} /></td>
                 <td className="px-3 py-3 border-b border-slate-800">
                   <div className="flex items-center gap-1.5">
                     <button title="Reiniciar" disabled={busy === `reboot-${onu.onu_id}`} onClick={() => act("reboot", onu)} className="w-8 h-8 rounded-lg border border-slate-700 text-cyan-300 flex items-center justify-center"><RotateCw className="w-3.5 h-3.5" /></button>

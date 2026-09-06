@@ -1,42 +1,23 @@
 /**
  * Archivo: frontend/src/modules/red/components/olt-tabs/OltOnusTab.jsx
  * Pertenece a: Red > OLT > pestaña "ONUs".
- * Función: Orquesta exclusivamente la pestaña ONUs: enlaza sus contadores aislados
- *          y el inventario gráfico ya existente, sin tocar otras pestañas.
- * Regla: Cada bloque nuevo de ONUs debe vivir en su propio archivo hijo cuando tenga
- *        lógica propia. No modificar Resumen, Puertos PON, Auto-find, Óptica o Consola.
+ * Función: Orquesta exclusivamente la pestaña ONUs y enlaza la vista administrativa
+ *          independiente de la lista de ONU.
+ * Regla: Cada bloque, menú o submenú nuevo de ONUs debe vivir en su propio archivo hijo.
+ *        No modificar Resumen, Puertos PON, Auto-find, Óptica ONU ni Consola desde aquí.
  */
 import React from "react";
-import OnuCardsPanelV2 from "../OnuCardsPanelV2";
-import OnuSummaryCounters from "./onu/OnuSummaryCounters";
+import OnuAdminTable from "./onu/OnuAdminTable";
 
 export default function OltOnusTab({ router, pon, res, onAction, onRefresh }) {
   const rows = res?.rows || [];
 
   return (
     <div className="space-y-4 onu-tab-isolated">
-      <OnuSummaryCounters
-        router={router}
-        pon={pon}
-        total={rows.length}
-      />
-
-      {/*
-        OnuCardsPanelV2 todavía conserva su resumen antiguo por compatibilidad.
-        Lo ocultamos SOLO dentro de esta pestaña para no editar ese componente
-        mientras resolvemos los contadores por partes.
-      */}
-      <style>{`
-        .onu-tab-isolated [data-testid="onu-cards-panel-v3"] > div:first-child {
-          display: none;
-        }
-      `}</style>
-
-      <OnuCardsPanelV2
+      <OnuAdminTable
         router={router}
         pon={pon}
         rows={rows}
-        raw={res?.raw || ""}
         onAction={onAction}
         onRefresh={onRefresh}
       />

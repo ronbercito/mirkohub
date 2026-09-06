@@ -171,14 +171,35 @@ export default function Network() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
-            <Stat icon={Cpu} label="CPU" value={`${selected.cpu_usage_pct}%`} />
-            <Stat icon={HardDrive} label="Memoria" value={`${selected.memory_usage_pct}%`} />
-            <Stat icon={Clock} label="Uptime" value={selected.uptime || "—"} />
-            <Stat icon={Activity} label="Latencia" value={selected.ping_ms ? `${selected.ping_ms} ms` : "—"} />
-            <Stat icon={Zap} label={selected.device_type === "olt" ? "Puertos PON" : "PPPoE activos"} value={selected.device_type === "olt" ? selected.pon_ports : selected.active_pppoe_count} />
-            <Stat icon={Server} label={selected.device_type === "olt" ? "Protocolo" : "Colas"} value={selected.device_type === "olt" ? (selected.protocol || "telnet").toUpperCase() : selected.active_queues_count} />
-          </div>
+          {selected.device_type === "olt" ? (
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs" data-testid="olt-operational-summary">
+              <Stat
+                icon={Activity}
+                label="Estado CLI"
+                value={selected.status === "online" ? "ONLINE" : selected.status === "offline" ? "OFFLINE" : "SIN PROBAR"}
+                valueClass={selected.status === "online" ? "text-emerald-300" : selected.status === "offline" ? "text-rose-300" : "text-slate-300"}
+              />
+              <Stat icon={Server} label="Modelo" value={selected.board_name || selected.olt_model || "—"} />
+              <Stat icon={Zap} label="Firmware" value={selected.ros_version || selected.software_version || "—"} />
+              <Stat icon={Zap} label="Puertos PON" value={`${selected.pon_ports || "—"} ${selected.pon_type || "PON"}`} />
+              <Stat icon={Activity} label="Latencia CLI" value={selected.ping_ms ? `${selected.ping_ms} ms` : "—"} />
+              <Stat
+                icon={ShieldOff}
+                label="Salud"
+                value={selected.last_error ? "REVISAR ERROR" : "SIN ERRORES"}
+                valueClass={selected.last_error ? "text-rose-300" : "text-emerald-300"}
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-xs">
+              <Stat icon={Cpu} label="CPU" value={`${selected.cpu_usage_pct}%`} />
+              <Stat icon={HardDrive} label="Memoria" value={`${selected.memory_usage_pct}%`} />
+              <Stat icon={Clock} label="Uptime" value={selected.uptime || "—"} />
+              <Stat icon={Activity} label="Latencia" value={selected.ping_ms ? `${selected.ping_ms} ms` : "—"} />
+              <Stat icon={Zap} label="PPPoE activos" value={selected.active_pppoe_count} />
+              <Stat icon={Server} label="Colas" value={selected.active_queues_count} />
+            </div>
+          )}
 
           {pingResult && (
             <div data-testid="ping-result" className="p-3 bg-cyan-950/40 border border-cyan-800/50 rounded-xl text-xs text-cyan-200 font-mono flex items-center gap-2">
@@ -204,9 +225,9 @@ export default function Network() {
   );
 }
 
-const Stat = ({ icon: Icon, label, value }) => (
-  <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
+const Stat = ({ icon: Icon, label, value, valueClass = "text-slate-100" }) => (
+  <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 min-w-0">
     <p className="text-[10px] uppercase tracking-wider text-slate-500 flex items-center gap-1"><Icon className="w-3 h-3" /> {label}</p>
-    <p className="text-sm font-bold text-slate-100 mt-1 font-mono truncate">{value}</p>
+    <p className={`text-sm font-bold mt-1 font-mono truncate ${valueClass}`} title={String(value ?? "")}>{value}</p>
   </div>
 );

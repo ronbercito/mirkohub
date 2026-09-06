@@ -3,7 +3,8 @@
  * Pertenece a: Red > OLT > ONUs v2 > submenú "Lista de ONU".
  * Función: Muestra la lista principal de ONUs con búsqueda, filtros y acciones.
  * Regla: SOLO presenta datos ya canónicos recibidos de onus-v2. No interpreta salida CLI.
- *        El orden visual sigue la VSOL: Descripción > Modelo ONU > Perfil ONU > Modo > Info.
+ * Alcance: Solo la tabla de lista; oculta el serial sin eliminarlo de búsquedas ni acciones.
+ * No modifica el backend, la adquisición RX ni las otras pestañas.
  */
 import React, { useMemo, useState } from "react";
 import { CheckCircle2, Power, RotateCw, Search, Trash2 } from "lucide-react";
@@ -87,12 +88,12 @@ export default function OnuListView({ onus = [], onAction }) {
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-800">
-        <table className="w-full min-w-[1240px] border-collapse text-left">
+        <table className="w-full min-w-[1080px] border-collapse text-left">
           <thead className="bg-slate-900/90">
             <tr>
               {[
                 "PON ID", "ONU ID", "Estado", "Descripción", "Modelo ONU",
-                "Perfil ONU", "Modo", "Autorización", "RX", "Acción",
+                "Perfil ONU", "Modo", "RX", "Acción",
               ].map((h) => (
                 <th key={h} className="px-3 py-3 border-b border-slate-700 text-[10px] uppercase tracking-wide text-slate-400">{h}</th>
               ))}
@@ -114,7 +115,6 @@ export default function OnuListView({ onus = [], onAction }) {
                 <td className="px-3 py-3 border-b border-slate-800 text-xs font-mono">{onu.model || "—"}</td>
                 <td className="px-3 py-3 border-b border-slate-800 text-xs font-mono">{onu.profile || "—"}</td>
                 <td className="px-3 py-3 border-b border-slate-800 text-xs">{onu.auth_mode || "—"}</td>
-                <td className="px-3 py-3 border-b border-slate-800 text-xs font-mono">{onu.auth_info || "—"}</td>
                 <td className="px-3 py-3 border-b border-slate-800 text-xs font-mono">{onu.rx_power || "—"}</td>
                 <td className="px-3 py-3 border-b border-slate-800">
                   <div className="flex items-center gap-1.5">
@@ -127,7 +127,7 @@ export default function OnuListView({ onus = [], onAction }) {
               </tr>
             ))}
             {!filtered.length && (
-              <tr><td colSpan={10} className="px-4 py-10 text-center text-xs text-slate-500">No hay ONUs para mostrar con este filtro.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-xs text-slate-500">No hay ONUs para mostrar con este filtro.</td></tr>
             )}
           </tbody>
         </table>

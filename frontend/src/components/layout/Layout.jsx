@@ -6,7 +6,7 @@
  *              modules/<modulo>/*.jsx (Dashboard, Network, Plans, Clients, Billing,
  *              Hotspot, Tasks, Inventory, Tickets, Messaging, Settings)
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Sidebar from "./Sidebar";
 import Navbar from "./Navbar";
 import Dashboard from "../../modules/inicio/Dashboard";
@@ -24,8 +24,11 @@ import Messaging from "../../modules/mensajeria/Messaging";
 import Settings from "../../modules/ajustes/Settings";
 
 export default function Layout() {
-  const [activeTab, setActiveTab] = useState("inicio");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem("fibraz_active_tab") || "inicio");
+  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("fibraz_sidebar_open") !== "false");
+
+  useEffect(() => { localStorage.setItem("fibraz_active_tab", activeTab); }, [activeTab]);
+  useEffect(() => { localStorage.setItem("fibraz_sidebar_open", String(sidebarOpen)); }, [sidebarOpen]);
 
   const renderContent = () => {
     switch (activeTab) {

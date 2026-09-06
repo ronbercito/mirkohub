@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import ClientRegistrationWizard from "./usuarios/ClientRegistrationWizard";
+import ClientDetail from "./ClientDetail";
 
 export default function Clients({ onSelectClient }) {
   const { API, token } = useAuth();
@@ -30,6 +31,7 @@ export default function Clients({ onSelectClient }) {
   
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
+  const [detailClientId, setDetailClientId] = useState(null);
   const [selectedClient, setSelectedClient] = useState(null);
   const [formData, setFormData] = useState({
     full_name: "",
@@ -381,6 +383,14 @@ export default function Clients({ onSelectClient }) {
 
                     <td className="py-3 px-4 text-center">
                       <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => setDetailClientId(c.id)}
+                          title="Ver ficha del cliente"
+                          className="p-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 transition"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+
                         {/* Toggle Service Cut Button */}
                         <button
                           data-testid={`btn-toggle-client-${c.id}`}
@@ -739,6 +749,14 @@ export default function Clients({ onSelectClient }) {
             </form>
           </div>
         </div>
+      )}
+      {detailClientId && (
+        <ClientDetail
+          clientId={detailClientId}
+          api={API}
+          token={token}
+          onClose={() => setDetailClientId(null)}
+        />
       )}
       {showAddModal && (
         <ClientRegistrationWizard

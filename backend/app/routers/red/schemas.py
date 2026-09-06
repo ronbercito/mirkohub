@@ -18,6 +18,8 @@ class RouterIn(BaseModel):
     password: str = ""
     model: str = ""
     location: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
     protocol: str = "telnet"
     enable_password: str = ""
     olt_profile: str = "vsol_gpon"

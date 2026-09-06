@@ -13,6 +13,7 @@ import {
   Activity, ExternalLink, RefreshCw, Layers, Radio
 } from "lucide-react";
 import { toast } from "sonner";
+import ClientRegistrationWizard from "./usuarios/ClientRegistrationWizard";
 
 export default function Clients({ onSelectClient }) {
   const { API, token } = useAuth();
@@ -432,7 +433,7 @@ export default function Clients({ onSelectClient }) {
       </div>
 
       {/* Add / Edit Client Modal */}
-      {showAddModal && (
+      {false && showAddModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 my-8">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -681,6 +682,19 @@ export default function Clients({ onSelectClient }) {
             </form>
           </div>
         </div>
+      )}
+      {showAddModal && (
+        <ClientRegistrationWizard
+          selectedClient={selectedClient}
+          formData={formData}
+          setFormData={setFormData}
+          plans={plans}
+          routers={routers}
+          ipv4Networks={ipv4Networks}
+          napBoxes={napBoxes}
+          onClose={() => { setShowAddModal(false); setSelectedClient(null); }}
+          onSubmit={handleSaveClient}
+        />
       )}
     </div>
   );

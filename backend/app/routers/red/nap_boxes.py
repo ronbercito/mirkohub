@@ -39,7 +39,7 @@ async def _rows(db: AsyncSession):
     assigned = {}
     for box_id, port, client_id, name in client_rows:
         assigned.setdefault(box_id, {})[port] = {"client_id": client_id, "client_name": name}
-    return [{**box.to_dict(), "assigned_ports": assigned.get(box.id, {}),
+    return [{**box.to_dict(), "name": box.display_name or box.name, "assigned_ports": assigned.get(box.id, {}),
              "used_ports": len(assigned.get(box.id, {}))} for box in boxes]
 
 
@@ -50,16 +50,18 @@ async def list_nap_boxes(db: AsyncSession = Depends(get_db)):
 
 @router.post("")
 async def create_nap_box(data: NapBoxIn, db: AsyncSession = Depends(get_db)):
-    exists = await db.scalar(select(NapBox.id).where(func.lower(NapBox.name) == data.name.strip().lower()))
-    if exists:
-        raise HTTPException(status_code=422, detail="Ya existe una caja NAP con ese nombre.")
     zone = await db.get(Zone, data.zone_id)
     if not zone:
         raise HTTPException(status_code=422, detail="La zona seleccionada ya no existe.")
-    box = NapBox(**{**data.model_dump(), "name": data.name.strip(), "zone_name": zone.name})
+    display_name = data.name.strip()
+    internal_name = f"{zone.id}:{display_name}".lower()
+    exists = await db.scalar(select(NapBox.id).where(func.lower(NapBox.name) == internal_name))
+    if exists:
+        raise HTTPException(status_code=422, detail="Ya existe una caja NAP con ese nombre en esta zona.")
+    box = NapBox(**{**data.model_dump(), "name": internal_name, "display_name": display_name, "zone_name": zone.name})
     db.add(box)
     await db.commit()
-    return {**box.to_dict(), "assigned_ports": {}, "used_ports": 0}
+    return {**box.to_dict(), "name": box.display_name or box.name, "assigned_ports": {}, "used_ports": 0}
 
 
 @router.put("/{box_id}")
@@ -71,12 +73,17 @@ async def update_nap_box(box_id: str, data: NapBoxIn, db: AsyncSession = Depends
     zone = await db.get(Zone, data.zone_id)
     if not zone:
         raise HTTPException(status_code=422, detail="La zona seleccionada ya no existe.")
-    box.name, box.location = data.name.strip(), data.location.strip()
+    display_name = data.name.strip()
+    internal_name = f"{zone.id}:{display_name}".lower()
+    exists = await db.scalar(select(NapBox.id).where(func.lower(NapBox.name) == internal_name, NapBox.id != box.id))
+    if exists:
+        raise HTTPException(status_code=422, detail="Ya existe una caja NAP con ese nombre en esta zona.")
+    box.name, box.display_name, box.location = internal_name, display_name, data.location.strip()
     box.zone_id, box.zone_name = zone.id, zone.name
     box.latitude, box.longitude = data.latitude, data.longitude
     box.ports, box.details = data.ports, data.details.strip()
     await db.commit()
-    return {**box.to_dict(), "used_ports": used, "assigned_ports": {}}
+    return {**box.to_dict(), "name": box.display_name or box.name, "used_ports": used, "assigned_ports": {}}
 
 
 @router.delete("/{box_id}")

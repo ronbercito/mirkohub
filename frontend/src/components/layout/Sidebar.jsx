@@ -10,7 +10,7 @@ import { TEST_IDS } from "../../constants/testIds";
 import {
   Home, Server, Zap, Users, Wifi, Calendar, DollarSign, Package, Headphones,
   MessageSquare, Settings, ChevronRight, LogOut, ShieldCheck, ChevronLeft,
-  Network, Box, ChevronDown, Radio, MapPin
+  Network, Box, ChevronDown, Radio, MapPin, Map
 } from "lucide-react";
 
 const menuItems = [
@@ -25,6 +25,7 @@ const menuItems = [
   { id: "clientes", label: "Clientes", icon: Users, testId: TEST_IDS.NAV_CLIENTES, children: [
     { id: "client_users", label: "Usuarios", icon: Users },
     { id: "client_zones", label: "Zonas", icon: MapPin },
+    { id: "client_map", label: "Mapa clientes", icon: Map },
   ]},
   { id: "facturacion", label: "Finanzas / Facturación", icon: DollarSign, testId: TEST_IDS.NAV_FACTURACION },
   { id: "hotspot", label: "Fichas Hotspot", icon: Wifi, testId: TEST_IDS.NAV_HOTSPOT },

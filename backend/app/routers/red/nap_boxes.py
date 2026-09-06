@@ -58,7 +58,7 @@ async def create_nap_box(data: NapBoxIn, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=422, detail="La zona seleccionada ya no existe.")
     display_name = data.name.strip()
     internal_name = sha256(f"{zone.id}:{display_name.lower()}".encode()).hexdigest()
-    exists = await db.scalar(select(NapBox.id).where(NapBox.zone_id == zone.id, func.lower(NapBox.display_name) == display_name.lower()))
+    exists = await db.scalar(select(NapBox.id).where(NapBox.zone_id == zone.id, func.lower(func.coalesce(func.nullif(NapBox.display_name, ""), NapBox.name)) == display_name.lower()))
     if exists:
         raise HTTPException(status_code=422, detail="Ya existe una caja NAP con ese nombre en esta zona.")
     box = NapBox(**{**data.model_dump(), "name": internal_name, "display_name": display_name, "zone_name": zone.name})

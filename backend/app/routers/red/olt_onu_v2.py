@@ -46,19 +46,16 @@ def _parse_index_token(token: str, selected_pon: int) -> Optional[int]:
     value = (token or "").strip().strip("|,;")
     pon = int(selected_pon)
 
-    # 1/1/1:7, 1/1/8:26, etc.
     m = re.fullmatch(r"(?:\d+/)+(?P<pon>\d+):(?P<onu>\d+)", value, re.IGNORECASE)
     if m and int(m.group("pon")) == pon:
         onu = int(m.group("onu"))
         return onu if 1 <= onu <= 128 else None
 
-    # GPON0/1:7, EPON0/1:7 o 0/1:7.
     m = re.fullmatch(r"(?:(?:GPON|EPON))?0/(?P<pon>\d+):(?P<onu>\d+)", value, re.IGNORECASE)
     if m and int(m.group("pon")) == pon:
         onu = int(m.group("onu"))
         return onu if 1 <= onu <= 128 else None
 
-    # GPON0/1/7 o 0/1/7.
     m = re.fullmatch(r"(?:(?:GPON|EPON))?0/(?P<pon>\d+)/(?P<onu>\d+)", value, re.IGNORECASE)
     if m and int(m.group("pon")) == pon:
         onu = int(m.group("onu"))
@@ -67,8 +64,8 @@ def _parse_index_token(token: str, selected_pon: int) -> Optional[int]:
     return None
 
 
-def _line_index(tokens: list[str], pon: int):
-    """Retorna (onu_id, cantidad_de_tokens_consumidos) o (None, 0)."""
+def _line_index(tokens: list[str], pon: int, *, allow_simple: bool = False):
+    """Retorna (onu_id, tokens_consumidos) sin concatenar columnas."""
     if not tokens:
         return None, 0
 
@@ -76,12 +73,18 @@ def _line_index(tokens: list[str], pon: int):
     if onu:
         return onu, 1
 
-    # Variante de tabla con PON ID y ONU ID en columnas separadas: `1  7  ...`.
+    # PON ID y ONU ID en columnas separadas: `1  7  ...`.
     if len(tokens) >= 2 and tokens[0].isdigit() and tokens[1].isdigit():
         if int(tokens[0]) == int(pon):
             onu = int(tokens[1])
             if 1 <= onu <= 128:
                 return onu, 2
+
+    # Dentro de interface gpon 0/X algunos firmwares muestran solo `ONU ID`.
+    if allow_simple and tokens[0].isdigit():
+        onu = int(tokens[0])
+        if 1 <= onu <= 128:
+            return onu, 1
 
     return None, 0
 
@@ -96,11 +99,15 @@ def _parse_state(raw: str, pon: int) -> dict[int, dict]:
             continue
 
         tokens = stripped.replace("|", " ").split()
-        onu_id, consumed = _line_index(tokens, pon)
+        onu_id, consumed = _line_index(tokens, pon, allow_simple=True)
         if not onu_id:
             continue
 
         rest = tokens[consumed:]
+        # Evita aceptar una línea que sea solo un número o que no tenga estados.
+        if len(rest) < 2:
+            continue
+
         admin = rest[0] if len(rest) > 0 else ""
         omcc = rest[1] if len(rest) > 1 else ""
         phase = rest[2] if len(rest) > 2 else ""
@@ -130,14 +137,8 @@ def _parse_state(raw: str, pon: int) -> dict[int, dict]:
     return result
 
 
-def _parse_info(raw: str, pon: int) -> dict[int, dict]:
-    """
-    Parsea `show onu info` sin usar anchos de columna.
-
-    Se interpreta desde la derecha cuando aparece el modo de autorización (Sn/Loid/Mac):
-      IDX [estado] [descripción] MODELO PERFIL MODO INFO
-    De esta forma una descripción con guiones/guiones bajos no desplaza el resto.
-    """
+def _parse_info(raw: str, pon: int, allowed_ids: set[int]) -> dict[int, dict]:
+    """Parsea `show onu info` sin usar anchos fijos ni fabricar IDs."""
     result: dict[int, dict] = {}
 
     for line in (raw or "").replace("\r", "").splitlines():
@@ -146,8 +147,8 @@ def _parse_info(raw: str, pon: int) -> dict[int, dict]:
             continue
 
         tokens = stripped.replace("|", " ").split()
-        onu_id, consumed = _line_index(tokens, pon)
-        if not onu_id:
+        onu_id, consumed = _line_index(tokens, pon, allow_simple=True)
+        if not onu_id or onu_id not in allowed_ids:
             continue
 
         rest = tokens[consumed:]
@@ -164,7 +165,6 @@ def _parse_info(raw: str, pon: int) -> dict[int, dict]:
             model = rest[mode_index - 2] if mode_index >= 2 else ""
             prefix = rest[:max(0, mode_index - 2)]
         else:
-            # Fallback conservador: solo usa los últimos campos si hay estructura suficiente.
             prefix = []
             if len(rest) >= 4:
                 model, profile, mode, auth_info = rest[-4:]
@@ -193,8 +193,8 @@ def _parse_info(raw: str, pon: int) -> dict[int, dict]:
     return result
 
 
-def _parse_optical(raw: str, pon: int) -> dict[int, dict]:
-    """Extrae RX/TX únicamente cuando la línea contiene valores ópticos reconocibles."""
+def _parse_optical(raw: str, pon: int, allowed_ids: set[int]) -> dict[int, dict]:
+    """Extrae RX/TX únicamente para ONU ID ya confirmados por `show onu state`."""
     result: dict[int, dict] = {}
 
     for line in (raw or "").replace("\r", "").splitlines():
@@ -203,8 +203,8 @@ def _parse_optical(raw: str, pon: int) -> dict[int, dict]:
             continue
 
         tokens = stripped.replace("|", " ").split()
-        onu_id, consumed = _line_index(tokens, pon)
-        if not onu_id:
+        onu_id, consumed = _line_index(tokens, pon, allow_simple=True)
+        if not onu_id or onu_id not in allowed_ids:
             continue
 
         numeric = []
@@ -217,7 +217,6 @@ def _parse_optical(raw: str, pon: int) -> dict[int, dict]:
                 value = float(m.group(1))
             except ValueError:
                 continue
-            # Potencias ópticas típicas; evita confundir IDs, distancia, etc.
             if -50.0 <= value <= 20.0:
                 numeric.append(value)
 
@@ -291,8 +290,9 @@ async def onus_v2(
             "raw": {"state": state_raw, "info": info_raw, "optical": optical_raw},
         }
 
-    info = _parse_info(info_raw, pon) if _valid(info_raw) else {}
-    optical = _parse_optical(optical_raw, pon) if _valid(optical_raw) else {}
+    allowed_ids = set(state)
+    info = _parse_info(info_raw, pon, allowed_ids) if _valid(info_raw) else {}
+    optical = _parse_optical(optical_raw, pon, allowed_ids) if _valid(optical_raw) else {}
 
     onus = []
     for onu_id in sorted(state):

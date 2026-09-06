@@ -103,6 +103,8 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
 
     if c.technology not in ("fiber", "wireless"):
         raise HTTPException(status_code=422, detail="Selecciona Fibra óptica o Inalámbrico.")
+    if c.technology == "fiber" and (not c.nap_box_id or c.nap_port is None):
+        raise HTTPException(status_code=422, detail="Selecciona una caja NAP y un puerto libre para la instalación de fibra.")
     if c.technology == "wireless":
         if not c.monitoring_equipment_id:
             raise HTTPException(status_code=422, detail="Selecciona el equipo al que se conectará el abonado inalámbrico.")

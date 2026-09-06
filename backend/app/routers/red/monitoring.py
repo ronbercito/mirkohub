@@ -30,6 +30,8 @@ class EquipmentIn(BaseModel):
     manufacturer: str = ""
     model_name: str = ""
     location: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
     details: str = ""
 
 

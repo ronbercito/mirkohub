@@ -1,10 +1,11 @@
 """
 Archivo: backend/app/routers/red/olt_onu_summary.py
 Pertenece a: Red > OLT > pestaña "ONUs" > contadores superiores.
-Función: Obtiene SOLO el resumen del PON seleccionado (online, offline y ONUs con nombre)
-         usando pocas consultas CLI en una sola sesión Telnet/SSH.
-Regla: Este archivo no modifica el inventario ONU, óptica, consola ni otras pestañas.
-       Si una consulta auxiliar falla, NO marca la OLT como offline.
+Función: Obtiene SOLO los contadores del PON seleccionado sin tocar inventario, tarjetas,
+         óptica, consola ni otras pestañas. Para Online/Offline usa la lectura óptica global
+         del PON, probando las variantes CLI `rx-power` y `rx` según firmware VSOL.
+Regla: Este archivo debe seguir siendo ligero: pocas consultas, una sola sesión CLI y nunca
+       consultar ONU por ONU. Si esta lectura auxiliar falla, NO marca la OLT como offline.
 """
 
 import re
@@ -21,7 +22,6 @@ from app.models.router import Router
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
-_INDEX_RE_TEMPLATE = r"(?:GPON|EPON)?\s*0/{pon}\s*[:/]\s*(\d{{1,3}})"
 _BAD_RE = re.compile(
     r"(?:%\s*(?:unknown|invalid|incomplete|ambiguous)\s+command|"
     r"unknown\s+command|invalid\s+command|command\s+not\s+found|"
@@ -34,77 +34,100 @@ def _valid(raw: str) -> bool:
     return bool((raw or "").strip()) and not _BAD_RE.search(raw or "")
 
 
-def _onu_id(line: str, pon: int):
-    """Acepta GPON0/1:7, 0/1:7 y también ID local `7` en tablas del PON actual."""
-    match = re.search(_INDEX_RE_TEMPLATE.format(pon=int(pon)), line or "", re.IGNORECASE)
-    if match:
-        value = int(match.group(1))
-        return value if 1 <= value <= 128 else None
+def _extract_onu_id(line: str, pon: int):
+    """Reconoce formatos habituales de VSOL dentro del PON seleccionado."""
+    patterns = (
+        rf"(?:GPON|EPON)?\s*0/{int(pon)}\s*[:/]\s*(\d{{1,3}})",
+        r"\bONU(?:\s*(?:ID|INDEX))?\s*[:=#-]?\s*(\d{1,3})\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, line or "", re.IGNORECASE)
+        if match:
+            value = int(match.group(1))
+            if 1 <= value <= 128:
+                return value
 
-    # Dentro de `interface gpon 0/X`, algunos firmwares imprimen sólo el ONU ID.
-    local = re.match(r"^\s*(\d{1,3})\b", line or "")
+    # En modo `interface gpon 0/X` varias versiones imprimen sólo el ID local.
+    local = re.match(r"^\s*(\d{1,3})(?:\s+|\||$)", line or "")
     if local:
         value = int(local.group(1))
-        return value if 1 <= value <= 128 else None
+        if 1 <= value <= 128:
+            return value
 
     return None
 
 
-def _parse_status(raw: str, pon: int):
-    """Devuelve sets de ONU IDs online/offline encontrados en una tabla de estado."""
+def _extract_rx_dbm(line: str):
+    """Extrae la potencia RX sin confundir el número de PON/ONU con la lectura."""
+    text = line or ""
+
+    # Preferir valores etiquetados como RX/RxPower.
+    labelled = re.search(
+        r"\b(?:rx(?:\s*power)?|rxpower)\b\s*[:=]?\s*(-?\d+(?:\.\d+)?)",
+        text,
+        re.IGNORECASE,
+    )
+    if labelled:
+        try:
+            return float(labelled.group(1))
+        except ValueError:
+            return None
+
+    # Tablas VSOL normalmente muestran la potencia como número negativo.
+    values = re.findall(r"-\d+(?:\.\d+)?", text)
+    for value in reversed(values):
+        try:
+            number = float(value)
+        except ValueError:
+            continue
+        if -100.0 <= number <= 10.0:
+            return number
+
+    return None
+
+
+def _parse_optical_state(raw: str, pon: int):
+    """
+    Devuelve IDs online/offline a partir de UNA tabla óptica global.
+
+    - Si la fila dice online/offline/los, se respeta el estado explícito.
+    - Si no hay estado, una RX razonable (-38 < RX < 10 dBm) se toma como online.
+    - Valores típicos de ausencia de señal (-40, -99, etc.) se toman como offline.
+    """
     online = set()
     offline = set()
 
     for original in (raw or "").replace("\r", "").splitlines():
-        onu_id = _onu_id(original, pon)
+        line = original.strip()
+        if not line:
+            continue
+
+        onu_id = _extract_onu_id(line, pon)
         if not onu_id:
             continue
 
-        low = original.lower()
-        if re.search(r"\bonline\b|\bregistered\b|\bworking\b", low):
+        low = line.lower()
+        if re.search(r"\bonline\b|\bregistered\b|\bworking\b|\bup\b", low):
             online.add(onu_id)
             offline.discard(onu_id)
-        elif re.search(r"\boffline\b|\blos\b|\bderegistered\b|\bdown\b", low):
+            continue
+        if re.search(r"\boffline\b|\blos\b|\bderegistered\b|\bdown\b", low):
             offline.add(onu_id)
             online.discard(onu_id)
-        elif re.search(r"\bup\b", low):
+            continue
+
+        rx = _extract_rx_dbm(line)
+        if rx is None:
+            continue
+
+        if -38.0 < rx < 10.0:
             online.add(onu_id)
             offline.discard(onu_id)
+        elif rx <= -38.0:
+            offline.add(onu_id)
+            online.discard(onu_id)
 
     return online, offline
-
-
-def _parse_optical_online(raw: str, pon: int):
-    """Fallback: una ONU con lectura RX válida se considera registrada/online."""
-    online = set()
-    for original in (raw or "").replace("\r", "").splitlines():
-        onu_id = _onu_id(original, pon)
-        if not onu_id:
-            continue
-        # Las líneas ópticas válidas suelen contener un valor negativo en dBm.
-        if re.search(r"-\d+(?:\.\d+)?\s*(?:dBm)?\b", original, re.IGNORECASE):
-            online.add(onu_id)
-    return online
-
-
-def _parse_named(raw: str, pon: int):
-    """Cuenta ONUs con descripción en la salida global `show onu description`."""
-    named = set()
-    index_re = re.compile(_INDEX_RE_TEMPLATE.format(pon=int(pon)), re.IGNORECASE)
-
-    for original in (raw or "").replace("\r", "").splitlines():
-        match = index_re.search(original)
-        if not match:
-            continue
-
-        onu_id = int(match.group(1))
-        tail = original[match.end():].strip(" \t|:-")
-        tail = re.sub(r"^description\s*[:=]?\s*", "", tail, flags=re.IGNORECASE).strip()
-
-        if tail and tail not in {"-", "--", "---"} and not re.fullmatch(r"(?:none|null|n/a)", tail, re.IGNORECASE):
-            named.add(onu_id)
-
-    return named
 
 
 @router.get("/{router_id}/olt/onu-summary")
@@ -115,10 +138,11 @@ async def onu_summary(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Resumen ligero para los cuatro indicadores de la pestaña ONUs.
+    Resumen ligero para los indicadores superiores de ONUs.
 
-    Se evita consultar ONU por ONU. Como máximo se ejecutan unas pocas consultas
-    globales dentro de UNA sola sesión CLI para no saturar Telnet de la VSOL.
+    Importante: esta etapa sólo corrige Online/Offline. El contador de nombres se deja
+    como no disponible hasta implementar una fuente global fiable, evitando nuevamente
+    26/52/128 consultas `show onu <id> description` que pueden saturar Telnet.
     """
     olt = await get_or_404(db, Router, router_id, "Router")
     if olt.device_type != "olt":
@@ -127,43 +151,35 @@ async def onu_summary(
     pon = max(1, min(int(pon or 1), int(getattr(olt, "pon_ports", 8) or 8)))
     total = max(0, int(total or 0))
 
-    status_raw = ""
-    description_raw = ""
-    optical_raw = ""
     commands = []
+    optical_raw = ""
+    optical_command = ""
 
     try:
         async with olt_service.connect(olt) as cli:
             cfg = await cli.run("configure terminal", raise_on_error=False)
             commands.append("configure terminal")
-
-            if _valid(cfg) or not _BAD_RE.search(cfg or ""):
-                status_all = await cli.run("show onu status all", raise_on_error=False)
-                commands.append("show onu status all")
-                if _valid(status_all):
-                    status_raw = status_all
-
-                desc_all = await cli.run("show onu description", raise_on_error=False)
-                commands.append("show onu description")
-                if _valid(desc_all):
-                    description_raw = desc_all
+            if _BAD_RE.search(cfg or ""):
+                raise RuntimeError("La OLT no aceptó 'configure terminal'")
 
             iface = f"interface gpon 0/{pon}"
             iface_raw = await cli.run(iface, raise_on_error=False)
             commands.append(iface)
+            if _BAD_RE.search(iface_raw or ""):
+                raise RuntimeError(f"La OLT no aceptó '{iface}'")
 
-            if not _BAD_RE.search(iface_raw or ""):
-                status_pon = await cli.run("show onu info", raise_on_error=False)
-                commands.append("show onu info")
-                if _valid(status_pon):
-                    on, off = _parse_status(status_pon, pon)
-                    if on or off:
-                        status_raw = status_pon
+            # V1.5.x suele usar rx-power; revisiones anteriores del V1600G usan rx.
+            for command in ("show pon onu all rx-power", "show pon onu all rx"):
+                raw = await cli.run(command, raise_on_error=False)
+                commands.append(command)
+                if not _valid(raw):
+                    continue
 
-                optical = await cli.run("show pon onu all rx-power", raise_on_error=False)
-                commands.append("show pon onu all rx-power")
-                if _valid(optical):
-                    optical_raw = optical
+                on, off = _parse_optical_state(raw, pon)
+                if on or off:
+                    optical_raw = raw
+                    optical_command = command
+                    break
 
     except Exception as exc:
         return {
@@ -172,24 +188,22 @@ async def onu_summary(
             "total": total,
             "online": 0,
             "offline": 0,
-            "named": 0,
+            "named": None,
+            "named_supported": False,
             "source": "error",
             "commands": commands,
         }
 
-    online_ids, offline_ids = _parse_status(status_raw, pon)
-    source = "status" if (online_ids or offline_ids) else ""
-
-    if not online_ids and not offline_ids:
-        online_ids = _parse_optical_online(optical_raw, pon)
-        if online_ids:
-            source = "optical"
-
-    named_ids = _parse_named(description_raw, pon)
-
+    online_ids, offline_ids = _parse_optical_state(optical_raw, pon)
     online_count = len(online_ids)
+
+    # Si la tabla óptica identifica explícitamente offline, usarla. Si no, el total
+    # ya viene del inventario `show onuinfo`, por lo que el resto se considera offline.
     if offline_ids:
         offline_count = len(offline_ids)
+        known = online_count + offline_count
+        if total > known:
+            offline_count += total - known
     elif total and online_count <= total:
         offline_count = total - online_count
     else:
@@ -200,7 +214,8 @@ async def onu_summary(
         "total": total,
         "online": online_count,
         "offline": offline_count,
-        "named": len(named_ids),
-        "source": source or "none",
+        "named": None,
+        "named_supported": False,
+        "source": f"optical:{optical_command}" if optical_command else "none",
         "commands": commands,
     }

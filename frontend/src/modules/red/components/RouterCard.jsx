@@ -1,8 +1,10 @@
 /**
  * Archivo: frontend/src/modules/red/components/RouterCard.jsx
+ * Área: Gestión de Red > tarjetas de equipos.
  * Función: Tarjeta resumen de un equipo de red (MikroTik u OLT) con estado online/offline
- *          real, IP, modelo y latencia. En MikroTik muestra CPU; en OLT muestra puertos PON
- *          para no duplicar las métricas detalladas que ya aparecen dentro de Resumen.
+ *          real, IP, modelo y latencia. En MikroTik muestra CPU; en OLT muestra puertos PON.
+ * Alcance: Diferencia visualmente MikroTik (cyan) y OLT VSOL (violeta).
+ * No modifica conexiones, datos, estado, acciones ni las pestañas del equipo.
  * Trabaja con: modules/red/Network.jsx, backend/app/models/router.py (campos mostrados)
  */
 import React from "react";
@@ -18,23 +20,26 @@ export default function RouterCard({ router, selected, onSelect }) {
   const st = STATUS[router.status] || STATUS.unknown;
   const isOlt = router.device_type === "olt";
   const Icon = isOlt ? Radio : Server;
+  const tone = isOlt
+    ? { accent: "violet", selected: "border-violet-500 shadow-violet-500/10", icon: "bg-violet-500/10 text-violet-400 border-violet-500/20", ip: "text-violet-400", metric: "text-violet-400" }
+    : { accent: "cyan", selected: "border-cyan-500 shadow-cyan-500/10", icon: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20", ip: "text-cyan-400", metric: "text-cyan-400" };
 
   return (
     <div
       data-testid={`router-card-${router.id}`}
       onClick={onSelect}
       className={`p-4 rounded-xl border cursor-pointer transition relative overflow-hidden ${
-        selected ? "bg-slate-900 border-cyan-500 shadow-xl shadow-cyan-500/10" : "bg-slate-900/60 border-slate-800 hover:border-slate-700"
+        selected ? `bg-slate-900 ${tone.selected} shadow-xl` : `bg-slate-900/60 border-slate-800 ${isOlt ? "hover:border-violet-500/60" : "hover:border-cyan-500/60"}`
       }`}
     >
       <div className="flex justify-between items-start mb-2">
         <div className="flex items-center gap-2 min-w-0">
-          <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+          <div className={`p-2 rounded-lg ${tone.icon}`}>
             <Icon className="w-5 h-5" />
           </div>
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-slate-100 truncate">{router.name}</h3>
-            <p className="text-[11px] font-mono text-cyan-400">{router.ip_address}:{router.port}</p>
+            <p className={`text-[11px] font-mono ${tone.ip}`}>{router.ip_address}:{router.port}</p>
           </div>
         </div>
         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[10px] border ${st.cls}`}>
@@ -49,7 +54,7 @@ export default function RouterCard({ router, selected, onSelect }) {
       <div className="grid grid-cols-2 gap-2 text-[11px] pt-3 border-t border-slate-800">
         {isOlt ? (
           <div className="flex items-center gap-1.5 text-slate-400">
-            <Zap className="w-3.5 h-3.5 text-cyan-400" /> PON: <span className="text-slate-200 font-bold">{router.pon_ports || "—"} {router.pon_type || ""}</span>
+            <Zap className={`w-3.5 h-3.5 ${tone.metric}`} /> PON: <span className="text-slate-200 font-bold">{router.pon_ports || "—"} {router.pon_type || ""}</span>
           </div>
         ) : (
           <div className="flex items-center gap-1.5 text-slate-400">

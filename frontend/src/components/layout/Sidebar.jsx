@@ -16,6 +16,7 @@ import {
 const menuItems = [
   { id: "inicio", label: "Inicio", icon: Home, testId: TEST_IDS.NAV_INICIO },
   { id: "red", label: "Gestión de Red", icon: Server, testId: TEST_IDS.NAV_RED, children: [
+    { id: "routers_olts", label: "Routers | OLTs", icon: Server },
     { id: "red_ipv4", label: "Redes IPv4", icon: Network },
     { id: "nap_boxes", label: "Cajas NAP", icon: Box },
     { id: "monitoring", label: "Monitoreo", icon: Radio },
@@ -76,7 +77,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, co
             return <div key={item.id}>
               <button data-testid={item.testId} onClick={() => {
                 if (hasChildren) {
-                  setActiveTab(item.id);
+                  setActiveTab(item.children[0].id);
                   setOpenGroup(expanded ? null : item.id);
                 } else selectLeaf(item.id);
               }} className={itemClass(groupActive)} title={!isOpen ? item.label : ""}>

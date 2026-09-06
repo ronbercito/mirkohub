@@ -44,6 +44,14 @@ class Client(Base):
     nap_box_id: Mapped[str] = mapped_column(String(36), default="", index=True)
     nap_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     optical_power_dbm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    installation_date: Mapped[str] = mapped_column(String(10), default="")
+    technology: Mapped[str] = mapped_column(String(20), default="fiber")  # fiber | wireless
+    zone_id: Mapped[str] = mapped_column(String(36), default="", index=True)
+    zone_name: Mapped[str] = mapped_column(String(120), default="")
+    monitoring_equipment_id: Mapped[str] = mapped_column(String(36), default="", index=True)
+    monitoring_equipment_name: Mapped[str] = mapped_column(String(120), default="")
+    antenna_type: Mapped[str] = mapped_column(String(80), default="")
+    management_ip: Mapped[str] = mapped_column(String(60), default="")
 
     status: Mapped[str] = mapped_column(String(30), default="active")  # active | suspended | canceled | pending_install
     billing_day: Mapped[int] = mapped_column(Integer, default=5)

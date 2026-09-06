@@ -1,0 +1,13 @@
+-- Archivo: deploy/mariadb/init.sql.template
+-- Función: Crea la base de datos y el usuario de MariaDB para el panel. Las variables
+--          ${DB_NAME}, ${DB_USER} y ${DB_PASS} las reemplaza deploy/setup_debian.sh (envsubst).
+--          Las tablas las crea automáticamente el backend al arrancar (SQLAlchemy create_all).
+-- Trabaja con: deploy/setup_debian.sh, backend/app/core/database.py
+CREATE DATABASE IF NOT EXISTS `${DB_NAME}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';
+ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASS}';
+ALTER USER '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';
+GRANT ALL PRIVILEGES ON `${DB_NAME}`.* TO '${DB_USER}'@'localhost';
+GRANT ALL PRIVILEGES ON `${DB_NAME}`.* TO '${DB_USER}'@'127.0.0.1';
+FLUSH PRIVILEGES;

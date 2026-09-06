@@ -1,0 +1,45 @@
+{
+  "app_name": "FibraZ ISP Manager",
+  "currency": "S/. (Soles Peruanos)",
+  "context": "Dashboards & Admin Panels / Telecommunication ISP Management System",
+  "archetype": "THE PERFORMANCE PRO (Elite Athleticism, Precision & Networking Command Center)",
+  "typography": {
+    "headings": "Chivo, sans-serif",
+    "body": "Inter, sans-serif",
+    "mono": "JetBrains Mono, monospace"
+  },
+  "colors": {
+    "primary": "#007AFF",
+    "accent": "#FF3B30",
+    "obsidian": "#0A0A0A",
+    "surface": "#121214",
+    "border": "#27272A",
+    "success": "#30D158",
+    "warning": "#FF9F0A"
+  },
+  "modules_included": [
+    "Dashboard FibraZ (online stats, 7-day traffic chart, speedometer, system status)",
+    "Gestión de Clientes (active, suspended, GPS maps, manual/auto suspend)",
+    "Facturación y Pagos S/. (invoices, receipts, Yape/Plin/Effec, PDF thermal print, income reports)",
+    "Gestión de Red y Routers MikroTik / OLT (live ping, live throughput kbps/Mbps, simple queues, PPPoE)",
+    "Planes y Servicios (Fiber plans 50Mbps/100Mbps/200Mbps with burst & S/. pricing)",
+    "Tickets de Soporte (client tickets, technician assignment, priority)",
+    "Almacén de Equipos (ONUs, Routers, fiber reels, splitters stock & assignment)",
+    "Tareas Técnicas (installations, maintenance tasks)",
+    "Fichas Hotspot (PIN generator for time/data sales)",
+    "Mensajería (WhatsApp/SMS payment reminders & cut notices)"
+  ],
+  "image_urls": [
+    {
+      "category": "telecom_dashboard",
+      "url": "https://images.unsplash.com/photo-1551288049-bebda4e38f71?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwxfHxmaWJlciUyMG9wdGljJTIwaW50ZXJuZXQlMjBuZXR3b3JrJTIwZGFzaGJvYXJkJTIwdGVsZWNvbW11bmljYXRpb258ZW58MHx8fHwxNzg4NjM2ODY0fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Analytics performance charts screen"
+    },
+    {
+      "category": "server_rack",
+      "url": "https://images.unsplash.com/photo-1695668548342-c0c1ad479aee?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzB8MHwxfHNlYXJjaHwxfHx0ZWxlY29tJTIwc2VydmVyJTIwcmFjayUyMGZpYmVyJTIwb3B0aWMlMjByb3V0ZXJ8ZW58MHx8fHwxNzg4NjM2ODY3fDA&ixlib=rb-4.1.0&q=85",
+      "description": "Server rack in telecom room"
+    }
+  ],
+  "instructions_to_main_agent": "Ensure all interactive elements have data-testid attributes, use React with Tailwind CSS, Lucide icons, Recharts for analytics, and JWT authentication flow. Support Soles (S/.) formatting throughout."
+}

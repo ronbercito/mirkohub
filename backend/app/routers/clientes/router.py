@@ -1,0 +1,147 @@
+"""
+Archivo: backend/app/routers/clientes/router.py
+Función: CRUD de abonados (/api/clients): listar con búsqueda y filtro, detalle con
+         facturas y tickets, crear (aprovisiona PPPoE/cola en el MikroTik y emite la
+         primera factura), editar (re-aprovisiona), eliminar (limpia el MikroTik) y
+         corte / reactivación de servicio real vía API RouterOS. GET /{id}/onu-status busca la ONU
+         del abonado (onu_sn) en las OLT VSOL registradas y devuelve estado y potencia óptica.
+Trabaja con: backend/app/models/client.py, plan.py, router.py, invoice.py, ticket.py,
+             backend/app/integrations/mikrotik/service.py, backend/app/routers/ajustes/router.py,
+             frontend/src/modules/clientes/Clients.jsx
+"""
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db, now_iso
+from app.core.security import get_current_user
+from app.core.utils import apply_updates, correlative, current_period, get_or_404
+from app.integrations.mikrotik import service as mt
+from app.integrations.olt import service as olt
+from app.models.client import Client
+from app.models.invoice import Invoice
+from app.models.plan import Plan
+from app.models.router import Router
+from app.models.setting import Setting
+from app.models.ticket import Ticket
+from app.routers.clientes.schemas import ClientIn
+
+router = APIRouter(prefix="/clients", tags=["Clientes"], dependencies=[Depends(get_current_user)])
+
+
+async def _cut_list(db: AsyncSession) -> str:
+    s = await db.get(Setting, "system_config")
+    return (s.data or {}).get("mikrotik_cut_list") or "morosos"
+
+
+async def _attach_plan_router(db: AsyncSession, c: Client):
+    plan = await db.get(Plan, c.plan_id) if c.plan_id else None
+    rtr = await db.get(Router, c.router_id) if c.router_id else None
+    c.plan_name, c.plan_price = (plan.name, plan.price) if plan else ("", 0.0)
+    c.router_name = rtr.name if rtr else ""
+    return plan, rtr
+
+
+@router.get("")
+async def list_clients(search: Optional[str] = None, status: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    q = select(Client)
+    if status and status != "all":
+        q = q.where(Client.status == status)
+    if search:
+        like = f"%{search}%"
+        q = q.where(or_(Client.full_name.ilike(like), Client.dni_ruc.ilike(like), Client.ip_address.ilike(like),
+                        Client.phone.ilike(like), Client.address.ilike(like), Client.pppoe_user.ilike(like)))
+    rows = (await db.execute(q.order_by(Client.created_at.desc()))).scalars().all()
+    return [c.to_dict() for c in rows]
+
+
+@router.get("/{client_id}")
+async def get_client(client_id: str, db: AsyncSession = Depends(get_db)):
+    c = await get_or_404(db, Client, client_id, "Cliente")
+    invoices = (await db.execute(select(Invoice).where(Invoice.client_id == client_id).order_by(Invoice.issue_date.desc()))).scalars().all()
+    tickets = (await db.execute(select(Ticket).where(Ticket.client_id == client_id).order_by(Ticket.created_at.desc()))).scalars().all()
+    data = c.to_dict()
+    data["invoices"] = [i.to_dict() for i in invoices]
+    data["tickets"] = [t.to_dict() for t in tickets]
+    return data
+
+
+@router.get("/{client_id}/onu-status")
+async def onu_status(client_id: str, db: AsyncSession = Depends(get_db)):
+    c = await get_or_404(db, Client, client_id, "Cliente")
+    if not c.onu_sn:
+        raise HTTPException(status_code=400, detail="El cliente no tiene ONU SN registrado")
+    olts = (await db.execute(select(Router).where(Router.device_type == "olt"))).scalars().all()
+    if not olts:
+        raise HTTPException(status_code=400, detail="No hay ninguna OLT registrada en Gestión de Red")
+    results = []
+    for r in olts:
+        res = await olt.find_onu(r, c.onu_sn)
+        results.append(res)
+        if res.get("found"):
+            await db.commit()
+            return {**res, "client": c.full_name, "onu_sn": c.onu_sn}
+    await db.commit()
+    return {"ok": True, "found": False, "client": c.full_name, "onu_sn": c.onu_sn,
+            "message": f"ONU {c.onu_sn} no encontrada en {len(olts)} OLT(s)", "details": results}
+
+
+@router.post("")
+async def create_client(data: ClientIn, db: AsyncSession = Depends(get_db)):
+    c = Client(**data.model_dump(exclude={"create_first_invoice"}))
+    c.last_connection_time = ""
+    plan, rtr = await _attach_plan_router(db, c)
+    db.add(c)
+    await db.flush()
+
+    if data.create_first_invoice and plan:
+        now = datetime.now(timezone.utc)
+        db.add(Invoice(invoice_number=correlative("REC"), client_id=c.id, client_name=c.full_name,
+                       client_dni_ruc=c.dni_ruc, client_address=c.address, client_phone=c.phone,
+                       plan_name=c.plan_name, amount=c.plan_price, month_period=current_period(),
+                       issue_date=now.strftime("%Y-%m-%d"), due_date=(now + timedelta(days=10)).strftime("%Y-%m-%d"),
+                       status="unpaid", notes="Factura inicial de instalación / servicio mensual"))
+        c.unpaid_invoices_count, c.balance_due = 1, c.plan_price
+
+    result = await mt.provision_client(c, rtr, plan)
+    await db.commit()
+    return {**c.to_dict(), "mikrotik": result}
+
+
+@router.put("/{client_id}")
+async def update_client(client_id: str, data: ClientIn, db: AsyncSession = Depends(get_db)):
+    c = await get_or_404(db, Client, client_id, "Cliente")
+    apply_updates(c, data.model_dump(exclude={"create_first_invoice"}))
+    plan, rtr = await _attach_plan_router(db, c)
+    result = await mt.provision_client(c, rtr, plan)
+    await db.commit()
+    return {**c.to_dict(), "mikrotik": result}
+
+
+@router.delete("/{client_id}")
+async def delete_client(client_id: str, db: AsyncSession = Depends(get_db)):
+    c = await get_or_404(db, Client, client_id, "Cliente")
+    rtr = await db.get(Router, c.router_id) if c.router_id else None
+    result = await mt.remove_client(c, rtr, await _cut_list(db))
+    await db.delete(c)
+    await db.commit()
+    return {"message": "Cliente eliminado correctamente", "mikrotik": result}
+
+
+@router.post("/{client_id}/toggle-status")
+async def toggle_status(client_id: str, db: AsyncSession = Depends(get_db)):
+    c = await get_or_404(db, Client, client_id, "Cliente")
+    rtr = await db.get(Router, c.router_id) if c.router_id else None
+    cut_list = await _cut_list(db)
+    if c.status == "active":
+        c.status, c.is_online = "suspended", False
+        result = await mt.cut_client(c, rtr, cut_list)
+    else:
+        c.status, c.is_online = "active", True
+        c.last_connection_time = now_iso()
+        result = await mt.restore_client(c, rtr, cut_list)
+    await db.commit()
+    return {"id": c.id, "status": c.status, "is_online": c.is_online, "message": result["message"], "mikrotik": result}

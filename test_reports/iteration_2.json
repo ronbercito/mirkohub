@@ -1,0 +1,69 @@
+{
+  "summary": "Regresión completa post-migración MongoDB→MariaDB. 32/32 tests pytest OK cubriendo auth, dashboard, planes, red/routers (MikroTik inalcanzable → 502 / ok:false controlado), clientes (crea 1ra factura y balance), facturación (pago único, reactivación, mass-generate sin duplicados, mark-overdue), tickets, almacén, hotspot, tareas, mensajería (4 plantillas) y ajustes. UI: login → Dashboard (Recaudación Diaria), Red (CRUD router + test-connection + ping + tab-interfaces con live-tab-error + delete), Clientes (modal con connection-type/ip/pppoe funciona, alta se refleja en tabla), Hotspot (dropdown 'Solo en el panel' + router), Ajustes (settings-cut-list visible y guardable).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/routers/{id}/{live_endpoint}",
+        "issue": "Cuando el MikroTik está inalcanzable el backend responde HTTP 502 con detail JSON, pero el edge (Cloudflare/preview ingress) reemplaza el body por su propia página HTML de 'Bad gateway'. El frontend recae en el mensaje genérico 'No se pudo leer el MikroTik' y NUNCA muestra el detalle exacto de FastAPI en producción preview. Considerar responder 200 con {ok:false, error:'…'} para preservar el mensaje (o usar 503/424) — el UX ya tolera el fallback pero se pierde diagnóstico."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Clients table row",
+        "issue": "Los 4 botones de acción por fila (editar / cortar / detalle / eliminar) no tienen data-testid, dificulta las pruebas automáticas del flujo de corte-reactivación y del botón detalle.",
+        "selector": "table tbody tr button",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "Cliente <select> options",
+        "issue": "Warning React de hidratación: '<span> cannot be a child of <option>' proveniente de un <option> con <span> anidado (probablemente en un select dentro del formulario de clientes). No rompe la UI pero ensucia consola.",
+        "selector": "select > option > span",
+        "priority": "LOW"
+      },
+      {
+        "component": "Dashboard Recharts",
+        "issue": "Warnings 'width(-1) height(-1) of chart' al primer render — el contenedor arranca sin dimensiones. Añadir minHeight al ResponsiveContainer.",
+        "selector": ".recharts-wrapper",
+        "priority": "LOW"
+      },
+      {
+        "component": "Client modal (Clients.jsx)",
+        "issue": "Escape no cierra el modal — el overlay fixed intercepta clicks al sidebar hasta que se pulsa Cancelar/X. Agregar cierre con Escape mejora UX.",
+        "selector": "[data-testid='btn-new-client']",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Añadir data-testid a los botones de cada fila de Clients (btn-toggle-client-{id}, btn-edit-client-{id}, btn-delete-client-{id}) para poder testear corte/reactivación desde UI.",
+    "Corregir el <option> con <span> anidado en un <select> del módulo Clientes (hydration warning).",
+    "Fijar minHeight en ResponsiveContainer de Dashboard para evitar warnings de Recharts.",
+    "(Opcional) Cambiar los endpoints live del router a 200 + {ok:false, error} para no depender del body 502 del backend (Cloudflare lo reemplaza)."
+  ],
+  "critical_code_review_comments": [
+    "backend/app/routers/red/router.py: las 8 rutas de lectura MikroTik confían en que el body de HTTP 502 llegue al cliente; en el preview esto no sucede (edge lo reescribe). Devolver 200 con payload de error facilitaría diagnóstico y no requeriría fallback genérico en RouterLiveTabs.",
+    "backend/app/routers/facturacion/router.py: mass_generate llama _refresh_balance dentro del bucle antes del commit; con muchos clientes puede ser lento. Considerar batchear.",
+    "frontend/src/modules/clientes/Clients.jsx: filas de la tabla carecen de data-testid en botones de acción; también hay un <option> con <span> hijo (warning React).",
+    "backend/server.py CORS: revisar si allow_origins sigue en '*' con allow_credentials=True (heredado de la iteración anterior)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/iteration_2.json"
+  ],
+  "success_rate": {"backend": "100% (32/32)", "frontend": "100% de flujos ejecutados"},
+  "test_credentials": "admin@fibraz.pe / admin123 (según /app/memory/test_credentials.md)",
+  "seed_data_creation": "Los tests crean y eliminan sus propios recursos con prefijo TEST_. El registro 'UI Test Cliente' creado durante la prueba UI fue eliminado vía API al finalizar. Persisten los 3 registros de prueba previos (plan 'Fibra 100', router 'MK Test', cliente 'Juan Perez').",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Todos los flujos backend post-MariaDB pasan (32 tests). Frontend probado extensamente: login, dashboard, CRUD router con estado offline, live-tabs con error controlado, alta de cliente, hotspot batch (dropdown incluye 'Solo en el panel' y router), settings con cut-list. Cloudflare/edge reemplaza los HTTP 502 del backend por HTML; el frontend usa fallback y sigue funcionando. Faltan data-testid en botones por fila de clientes para automatizar corte/reactivación desde UI.",
+  "rca of the issue": "N/A — no hay bugs bloqueantes. Los detalles JSON de errores 502 del router se pierden porque el ingress del preview los reescribe; el frontend ya cae en fallback genérico y la UX no se rompe."
+}

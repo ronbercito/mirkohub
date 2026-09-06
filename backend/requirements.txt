@@ -1,0 +1,14 @@
+fastapi>=0.110.0
+uvicorn>=0.25.0
+pydantic>=2.6.0
+python-dotenv>=1.0.0
+bcrypt>=4.1.0
+pyjwt>=2.8.0
+python-multipart>=0.0.9
+sqlalchemy[asyncio]>=2.0.30
+aiomysql>=0.2.0
+PyMySQL>=1.1.0
+aiosqlite>=0.20.0
+cryptography>=42.0.0
+librouteros>=4.0.0
+asyncssh>=2.14.0

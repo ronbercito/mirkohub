@@ -1,0 +1,14 @@
+# Archivo: deploy/supervisor/mikrosmart_backend.conf.template
+# Función: Servicio Supervisor que mantiene el backend FastAPI (uvicorn) corriendo en
+#          127.0.0.1:8001 con reinicio automático. ${APP_DIR} lo reemplaza setup_debian.sh.
+# Trabaja con: deploy/setup_debian.sh, backend/server.py, deploy/nginx/mikrosmart.conf.template
+[program:mikrosmart_backend]
+directory=${APP_DIR}/backend
+command=${APP_DIR}/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8001 --workers 2
+autostart=true
+autorestart=true
+startretries=5
+stderr_logfile=/var/log/mikrosmart_backend.err.log
+stdout_logfile=/var/log/mikrosmart_backend.out.log
+user=root
+environment=PYTHONUNBUFFERED=1

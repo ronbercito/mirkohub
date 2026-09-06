@@ -174,6 +174,7 @@ export default function ClientDetail({ clientId, api, token, onClose }) {
           </table>
         </div>
       ) : <EmptyState title="Sin facturas registradas" description="Las facturas creadas para este cliente aparecerán aquí." />;
+    }
 
     if (activeTab === "tickets") {
       const tickets = client.tickets || [];

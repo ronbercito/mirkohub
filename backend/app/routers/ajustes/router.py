@@ -16,6 +16,7 @@ from app.core.security import get_current_user
 from app.models.setting import DEFAULT_SETTINGS, Setting
 
 router = APIRouter(prefix="/settings", tags=["Ajustes"], dependencies=[Depends(get_current_user)])
+public_router = APIRouter(prefix="/settings", tags=["Ajustes públicos"])
 
 
 async def _get(db: AsyncSession) -> Setting:
@@ -25,6 +26,17 @@ async def _get(db: AsyncSession) -> Setting:
         db.add(s)
         await db.commit()
     return s
+
+
+@public_router.get("/public")
+async def get_public_branding(db: AsyncSession = Depends(get_db)):
+    """Datos visuales necesarios antes de iniciar sesión; no expone datos fiscales."""
+    s = await _get(db)
+    data = {**DEFAULT_SETTINGS, **(s.data or {})}
+    return {
+        "company_name": (data.get("company_name") or "MikroHub").strip() or "MikroHub",
+        "logo_data": data.get("logo_data") or "",
+    }
 
 
 @router.get("")

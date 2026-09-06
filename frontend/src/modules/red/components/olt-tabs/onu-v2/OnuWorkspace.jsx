@@ -2,8 +2,8 @@
  * Archivo: frontend/src/modules/red/components/olt-tabs/onu-v2/OnuWorkspace.jsx
  * Pertenece a: Red > OLT > pestaña "ONUs".
  * Función: Orquesta los submenús independientes de ONUs v2 y consulta /olt/onus-v2.
- * Regla: Este archivo NO parsea CLI ni abre lecturas auxiliares de Telnet. Toda la
- * Alcance: pasa el equipo a la lista, que delega RX bajo demanda a OnuPowerCell.
+ * Regla: Este archivo NO parsea CLI ni consulta óptica por sí mismo.
+ * Alcance: pasa el equipo a los módulos independientes de Lista y Potencia Óptica.
  * No modifica parsers, configuración de equipos ni otras pestañas.
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -113,7 +113,7 @@ export default function OnuWorkspace({ router, pon, onAction, refreshSeq = 0, sh
           {data?.ok && tab === "list" && <OnuListView key={router.id + ":" + pon} routerId={router.id} onus={onus} onAction={onAction} />}
           {data?.ok && tab === "state" && <OnuStateView onus={onus} />}
           {data?.ok && tab === "auth" && <OnuAuthView onus={onus} />}
-          {data?.ok && tab === "optical" && <OnuOpticalView onus={onus} />}
+          {data?.ok && tab === "optical" && <OnuOpticalView key={router.id + ":" + pon} routerId={router.id} onus={onus} />}
 
           {showRaw && (
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">

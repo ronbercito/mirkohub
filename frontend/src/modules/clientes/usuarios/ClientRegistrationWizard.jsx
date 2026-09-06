@@ -6,7 +6,8 @@
  *          en Clients.jsx, sin alterar la lógica de MikroTik, NAP o redes IPv4.
  * Trabaja con: ../Clients.jsx, planes, routers, redes IPv4 y cajas NAP.
  */
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
+import axios from "axios";
 import { Check, ChevronLeft, ChevronRight, CreditCard, UserRound, Wifi, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -16,12 +17,36 @@ const Step = ({ number, label, subtitle, active, done, onClick }) => (
   </button>
 );
 
-export default function ClientRegistrationWizard({ selectedClient, formData, setFormData, plans, routers, ipv4Networks, napBoxes, onClose, onSubmit }) {
+export default function ClientRegistrationWizard({ selectedClient, formData, setFormData, plans, routers, ipv4Networks, napBoxes, onClose, onSubmit, api, token }) {
   const [step, setStep] = useState(1);
   const activePlans = plans.filter((plan) => plan.is_active);
   const mikrotiks = routers.filter((router) => router.device_type === "mikrotik");
-  const networks = ipv4Networks.filter((network) => network.router_id === formData.router_id);
+  const connectionUsage = { "PPPoE": "pppoe_pool", "IP Estática": "static", "DHCP": "dhcp" }[formData.connection_type] || "pppoe_pool";
+  const networks = ipv4Networks.filter((network) => network.router_id === formData.router_id && network.usage_type === connectionUsage);
   const nap = napBoxes.find((box) => box.id === formData.nap_box_id);
+  const [availableAddresses, setAvailableAddresses] = useState([]);
+  const [loadingAddresses, setLoadingAddresses] = useState(false);
+
+  useEffect(() => {
+    if (!formData.ipv4_network_id || formData.connection_type === "PPPoE") {
+      setAvailableAddresses([]);
+      return;
+    }
+    let active = true;
+    setLoadingAddresses(true);
+    axios.get(`${api}/ipv4-networks/${formData.ipv4_network_id}/available-addresses`, {
+      params: { exclude_client_id: selectedClient?.id || "" },
+      headers: { Authorization: `Bearer ${token}` }
+    }).then((response) => {
+      if (active) setAvailableAddresses(response.data.addresses || []);
+    }).catch(() => {
+      if (active) {
+        setAvailableAddresses([]);
+        toast.error("No se pudieron consultar las IPs disponibles.");
+      }
+    }).finally(() => { if (active) setLoadingAddresses(false); });
+    return () => { active = false; };
+  }, [api, token, selectedClient?.id, formData.connection_type, formData.ipv4_network_id]);
 
   const next = () => {
     if (step === 1 && (!formData.full_name?.trim() || !formData.dni_ruc?.trim() || !formData.address?.trim() || !formData.phone?.trim())) {
@@ -58,7 +83,11 @@ export default function ClientRegistrationWizard({ selectedClient, formData, set
               <div className="pt-2 text-[11px] text-cyan-300"><p>Celular: {formData.phone || "Sin registrar"}</p><p className="mt-1">Correo: {formData.email || "Sin registrar"}</p></div>
             </Card>
           </div>}
-          {step === 3 && <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5"><Card title="Internet y MikroTik" icon={Wifi}><Field label="MikroTik *"><select required value={formData.router_id} onChange={e=>setFormData({...formData,router_id:e.target.value,ipv4_network_id:""})}><option value="" disabled>Selecciona un MikroTik</option>{mikrotiks.map(router=><option key={router.id} value={router.id}>{router.name}</option>)}</select></Field><Field label="Plan de internet *"><select required value={formData.plan_id} onChange={e=>setFormData({...formData,plan_id:e.target.value})}><option value="" disabled>Selecciona un plan</option>{activePlans.map(plan=><option key={plan.id} value={plan.id}>{plan.name} — S/. {Number(plan.price).toFixed(2)}</option>)}</select></Field><Field label="Tipo de conexión"><select value={formData.connection_type} onChange={e=>setFormData({...formData,connection_type:e.target.value})}><option value="PPPoE">PPPoE</option><option value="IP Estática">IP estática</option><option value="DHCP">DHCP</option></select></Field><Field label="Red IPv4"><select value={formData.ipv4_network_id || ""} onChange={e=>setFormData({...formData,ipv4_network_id:e.target.value})}><option value="">Sin red asignada</option>{networks.map(network=><option key={network.id} value={network.id}>{network.name} — {network.cidr}</option>)}</select></Field><Field label="IP del cliente"><input value={formData.ip_address || ""} onChange={e=>setFormData({...formData,ip_address:e.target.value})} placeholder="192.168.x.x" /></Field><Field label="Usuario PPPoE"><input value={formData.pppoe_user || ""} onChange={e=>setFormData({...formData,pppoe_user:e.target.value})} placeholder="usuario_pppoe" /></Field><Field label="Clave PPPoE"><input value={formData.pppoe_password || ""} onChange={e=>setFormData({...formData,pppoe_password:e.target.value})} placeholder="clave PPPoE" /></Field></Card><Card title="Fibra y ubicación" icon={Wifi}><Field label="Caja NAP"><select value={formData.nap_box_id || ""} onChange={e=>setFormData({...formData,nap_box_id:e.target.value,nap_port:"",nap_box:""})}><option value="">Sin caja NAP</option>{napBoxes.map(box=><option key={box.id} value={box.id}>{box.name}</option>)}</select></Field><Field label="Puerto NAP"><select disabled={!nap} value={formData.nap_port ?? ""} onChange={e=>setFormData({...formData,nap_port:e.target.value === "" ? "" : Number(e.target.value)})}><option value="">Sin puerto</option>{Array.from({length:nap?.ports || 0},(_,i)=>i+1).map(port=><option key={port} value={port}>Puerto {port}</option>)}</select></Field><Field label="Serie ONU"><input value={formData.onu_sn || ""} onChange={e=>setFormData({...formData,onu_sn:e.target.value})} placeholder="SN / MAC de la ONU" /></Field><Field label="Potencia óptica (dBm)"><input type="number" step="0.1" value={formData.optical_power_dbm ?? ""} onChange={e=>setFormData({...formData,optical_power_dbm:e.target.value})} placeholder="-19.5" /></Field></Card></div>}
+          {step === 3 && <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5"><Card title="Internet y MikroTik" icon={Wifi}><Field label="MikroTik *"><select required value={formData.router_id} onChange={e=>setFormData({...formData,router_id:e.target.value,ipv4_network_id:""})}><option value="" disabled>Selecciona un MikroTik</option>{mikrotiks.map(router=><option key={router.id} value={router.id}>{router.name}</option>)}</select></Field><Field label="Plan de internet *"><select required value={formData.plan_id} onChange={e=>setFormData({...formData,plan_id:e.target.value})}><option value="" disabled>Selecciona un plan</option>{activePlans.map(plan=><option key={plan.id} value={plan.id}>{plan.name} — S/. {Number(plan.price).toFixed(2)}</option>)}</select></Field><Field label="Tipo de conexión"><select value={formData.connection_type} onChange={e=>setFormData({...formData,connection_type:e.target.value,ipv4_network_id:"",ip_address:""})}><option value="PPPoE">PPPoE</option><option value="IP Estática">IP estática</option><option value="DHCP">DHCP</option></select></Field>
+              <Field label={formData.connection_type === "PPPoE" ? "Pool PPPoE" : formData.connection_type === "DHCP" ? "Pool DHCP" : "Red IP estática"}><select value={formData.ipv4_network_id || ""} onChange={e=>setFormData({...formData,ipv4_network_id:e.target.value,ip_address:""})}><option value="">Selecciona {formData.connection_type === "PPPoE" ? "un pool PPPoE" : "una red"}</option>{networks.map(network=><option key={network.id} value={network.id}>{network.name} — {network.cidr}</option>)}</select></Field>
+              {formData.connection_type !== "PPPoE" && <><Field label={formData.connection_type === "DHCP" ? "IP disponible / reserva DHCP" : "IP disponible del cliente"}><select disabled={!formData.ipv4_network_id || loadingAddresses} value={formData.ip_address || ""} onChange={e=>setFormData({...formData,ip_address:e.target.value})}><option value="">{loadingAddresses ? "Consultando IPs disponibles..." : !formData.ipv4_network_id ? "Primero selecciona una red" : "Selecciona una IP disponible"}</option>{formData.ip_address && !availableAddresses.includes(formData.ip_address) && <option value={formData.ip_address}>{formData.ip_address} (asignada a este cliente)</option>}{availableAddresses.map(address=><option key={address} value={address}>{address}</option>)}</select></Field><p className="text-[11px] text-slate-400 -mt-2">Solo se muestran direcciones libres de la red seleccionada.</p></>}
+              {formData.connection_type === "PPPoE" && <><Field label="Usuario PPPoE"><input required value={formData.pppoe_user || ""} onChange={e=>setFormData({...formData,pppoe_user:e.target.value})} placeholder="usuario_pppoe" /></Field><Field label="Clave PPPoE"><input required type="password" value={formData.pppoe_password || ""} onChange={e=>setFormData({...formData,pppoe_password:e.target.value})} placeholder="Clave del usuario PPPoE" /></Field><p className="text-[11px] text-slate-400 -mt-2">El plan se aplicará como perfil PPPoE en el MikroTik.</p></Field></>}
+</Field></Card><Card title="Fibra y ubicación" icon={Wifi}><Field label="Caja NAP"><select value={formData.nap_box_id || ""} onChange={e=>setFormData({...formData,nap_box_id:e.target.value,nap_port:"",nap_box:""})}><option value="">Sin caja NAP</option>{napBoxes.map(box=><option key={box.id} value={box.id}>{box.name}</option>)}</select></Field><Field label="Puerto NAP"><select disabled={!nap} value={formData.nap_port ?? ""} onChange={e=>setFormData({...formData,nap_port:e.target.value === "" ? "" : Number(e.target.value)})}><option value="">Sin puerto</option>{Array.from({length:nap?.ports || 0},(_,i)=>i+1).map(port=><option key={port} value={port}>Puerto {port}</option>)}</select></Field><Field label="Serie ONU"><input value={formData.onu_sn || ""} onChange={e=>setFormData({...formData,onu_sn:e.target.value})} placeholder="SN / MAC de la ONU" /></Field><Field label="Potencia óptica (dBm)"><input type="number" step="0.1" value={formData.optical_power_dbm ?? ""} onChange={e=>setFormData({...formData,optical_power_dbm:e.target.value})} placeholder="-19.5" /></Field></Card></div>}
         </div>
         <div className="flex justify-between gap-3 p-5 bg-slate-950/50 border-t border-slate-800"><button type="button" onClick={step === 1 ? onClose : () => setStep(step - 1)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 flex items-center gap-1"><ChevronLeft className="w-4 h-4" /> {step === 1 ? "Cancelar" : "Anterior"}</button>{step < 3 ? <button type="button" onClick={next} className="px-4 py-2 rounded-xl bg-cyan-500 text-white font-semibold flex items-center gap-1">Siguiente <ChevronRight className="w-4 h-4" /></button> : <button type="submit" className="px-5 py-2 rounded-xl bg-cyan-500 text-white font-semibold">Registrar usuario</button>}</div>
       </form>

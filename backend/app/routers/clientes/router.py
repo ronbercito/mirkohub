@@ -80,8 +80,11 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
                 network = ipaddress.ip_network(ipv4_network.cidr)
             except ValueError as error:
                 raise HTTPException(status_code=422, detail="La IP del cliente no es válida.") from error
+            gateway = network.network_address + 1
             if address not in network or address in (network.network_address, network.broadcast_address):
                 raise HTTPException(status_code=422, detail=f"La IP debe ser un host válido dentro de {ipv4_network.cidr}.")
+            if address == gateway:
+                raise HTTPException(status_code=422, detail=f"La IP {gateway} está reservada como puerta de enlace del MikroTik. Selecciona una IP desde .2.")
             assigned_query = select(Client.id).where(
                 Client.ipv4_network_id == ipv4_network.id,
                 Client.ip_address == str(address),

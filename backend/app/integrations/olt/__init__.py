@@ -8,9 +8,13 @@ Compatibilidad VSOL:
     esperaba que esos textos fueran siempre la última línea y podía terminar enviando
     "enable" como usuario o quedarse esperando hasta que la OLT cerrara Telnet.
 
-    Este módulo aplica un parche de compatibilidad al cargar el paquete para reconocer
-    Login/Password/prompt aunque existan alarmas después, y evita mezclar esas alarmas
-    con la salida de los comandos.
+    Además, algunas revisiones de firmware V1600G aceptan `show version` únicamente
+    dentro de `configure terminal`. Si se ejecuta directamente en modo privilegiado (#),
+    responden `% Unknown command` aunque la sesión Telnet esté correctamente autenticada.
+
+    Este módulo aplica compatibilidad al cargar el paquete para reconocer Login/Password/
+    prompt aunque existan alarmas después, filtrar eventos asíncronos y ejecutar la lectura
+    de versión desde el modo correcto.
 """
 
 import asyncio
@@ -169,8 +173,33 @@ async def _login(self):
     )
 
 
+async def _get_version(self) -> str:
+    """
+    Lee la versión en modo configuración.
+
+    En varias V1600G/V1600G1-B reales `show version` devuelve `% Unknown command`
+    si se ejecuta directamente en el prompt privilegiado. El CLI documentado requiere:
+        enable
+        configure terminal
+        show version
+    """
+    await self.ensure_privileged()
+
+    if self._mode != "config":
+        await self.run(
+            "configure terminal",
+            raise_on_error=True,
+        )
+
+    return await self.run(
+        "show version",
+        raise_on_error=True,
+    )
+
+
 # Aplicar los métodos compatibles a la clase que ya usa service.py.
 _vsol.OltClient._last_prompt_line = staticmethod(_last_prompt_line)
 _vsol.OltClient._looks_like_prompt = classmethod(_looks_like_prompt)
 _vsol.OltClient._clean_command_output = classmethod(_clean_command_output)
 _vsol.OltClient._login = _login
+_vsol.OltClient.get_version = _get_version

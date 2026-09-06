@@ -425,7 +425,18 @@ export default function Clients({ onSelectClient }) {
                               nap_box_id: c.nap_box_id || "",
                               nap_port: c.nap_port ?? "",
                               optical_power_dbm: c.optical_power_dbm ?? "",
-                              status: c.status
+                              status: c.status,
+                              billing_day: c.billing_day ?? 5,
+                              billing_type: c.billing_type || "prepaid",
+                              invoice_lead_days: c.invoice_lead_days ?? 5,
+                              grace_days: c.grace_days ?? 5,
+                              cut_after_months: c.cut_after_months ?? 1,
+                              invoice_notification_channel: c.invoice_notification_channel || "none",
+                              payment_reminder_channel: c.payment_reminder_channel || "none",
+                              reminder_1_days: c.reminder_1_days ?? null,
+                              reminder_2_days: c.reminder_2_days ?? null,
+                              reminder_3_days: c.reminder_3_days ?? null,
+                              create_first_invoice: false
                             });
                             setShowAddModal(true);
                           }}

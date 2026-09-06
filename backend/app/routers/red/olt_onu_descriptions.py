@@ -7,10 +7,8 @@ Regla: Este archivo SOLO resuelve descripciones. No modifica el inventario, esta
 
 Estrategia:
 1) Recibe los ONU ID ya validados por ONUs v2.
-2) Intenta una sola lectura `show running-config` dentro del PON y extrae líneas
-   `onu <id> description <texto>`.
-3) Para las ONUs que no aparezcan allí, usa el comando documentado por VSOL:
-   `show onu <id> description`, siempre dentro de la misma sesión Telnet.
+2) Hace una sola lectura `show running-config` dentro del PON y extrae líneas
+   `onu <id> desc <texto>`. Este firmware no usa la palabra `description`.
 """
 
 import re
@@ -26,7 +24,7 @@ from app.models.router import Router
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
 _ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-_CURSOR_RE = re.compile(r"\d{1,3}C")
+_CURSOR_RE = re.compile(r"(?:12|27|41|56)C")
 _BAD_RE = re.compile(
     r"(?:%\s*(?:unknown|invalid|incomplete|ambiguous)\s+command|"
     r"unknown\s+command|invalid\s+command|command\s+not\s+found)",
@@ -53,7 +51,7 @@ def _parse_ids(ids: str) -> list[int]:
 
 
 def _parse_running_config(raw: str, allowed: set[int]) -> dict[int, str]:
-    """Extrae `onu N description TEXTO` de la configuración del PON."""
+    """Extrae `onu N desc TEXTO` de la configuración del PON."""
     result: dict[int, str] = {}
     text = _clean(raw)
 
@@ -62,7 +60,7 @@ def _parse_running_config(raw: str, allowed: set[int]) -> dict[int, str]:
         if not line:
             continue
 
-        match = re.search(r"\bonu\s+(\d{1,3})\s+description\s+(.+?)\s*$", line, re.IGNORECASE)
+        match = re.search(r"\bonu\s+(\d{1,3})\s+desc\s+(.+?)\s*$", line, re.IGNORECASE)
         if not match:
             continue
 
@@ -145,7 +143,6 @@ async def onu_descriptions(
     allowed = set(onu_ids)
     descriptions: dict[int, str] = {}
     running_raw = ""
-    single_raw: dict[str, str] = {}
 
     try:
         async with olt_service.connect(olt) as cli:
@@ -154,19 +151,6 @@ async def onu_descriptions(
             if running_raw and not _BAD_RE.search(running_raw):
                 descriptions.update(_parse_running_config(running_raw, allowed))
 
-            # Fallback exacto de VSOL, solo para las ONUs que siguen sin descripción.
-            missing = [onu_id for onu_id in onu_ids if onu_id not in descriptions]
-            for onu_id in missing:
-                raw = await cli.run_pon(
-                    pon,
-                    f"show onu {onu_id} description",
-                    raise_on_error=False,
-                )
-                single_raw[str(onu_id)] = raw or ""
-                description = _parse_single_description(raw, onu_id)
-                if description:
-                    descriptions[onu_id] = description
-
     except Exception as exc:
         return {
             "ok": False,
@@ -174,12 +158,8 @@ async def onu_descriptions(
             "descriptions": descriptions,
             "error": str(exc),
             "source": "parcial",
-            "raw": {"running_config": running_raw, "individual": single_raw},
+            "raw": {"running_config": running_raw},
         }
-
-    source = "running-config"
-    if single_raw:
-        source = "running-config + show onu <id> description"
 
     return {
         "ok": True,
@@ -187,6 +167,6 @@ async def onu_descriptions(
         "descriptions": {str(key): value for key, value in descriptions.items()},
         "found": len(descriptions),
         "requested": len(onu_ids),
-        "source": source,
-        "raw": {"running_config": running_raw, "individual": single_raw},
+        "source": "running-config: onu <id> desc",
+        "raw": {"running_config": running_raw},
     }

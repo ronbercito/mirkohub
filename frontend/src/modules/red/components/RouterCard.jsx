@@ -8,7 +8,7 @@
  * Trabaja con: modules/red/Network.jsx, backend/app/models/router.py (campos mostrados)
  */
 import React from "react";
-import { Server, Cpu, Activity, Radio, Zap } from "lucide-react";
+import { Server, Cpu, Activity, Radio, Zap, MapPin } from "lucide-react";
 
 const STATUS = {
   online: { label: "ONLINE", cls: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", dot: "bg-emerald-400 animate-pulse" },
@@ -16,7 +16,7 @@ const STATUS = {
   unknown: { label: "SIN PROBAR", cls: "bg-slate-700/40 text-slate-300 border-slate-600/40", dot: "bg-slate-400" },
 };
 
-export default function RouterCard({ router, selected, onSelect }) {
+export default function RouterCard({ router, selected, onSelect, onCoordinates }) {
   const st = STATUS[router.status] || STATUS.unknown;
   const isOlt = router.device_type === "olt";
   const Icon = isOlt ? Radio : Server;
@@ -42,9 +42,12 @@ export default function RouterCard({ router, selected, onSelect }) {
             <p className={`text-[11px] font-mono ${tone.ip}`}>{router.ip_address}:{router.port}</p>
           </div>
         </div>
-        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[10px] border ${st.cls}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`}></span> {st.label}
-        </span>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={(event) => { event.stopPropagation(); onCoordinates?.(router); }} title="Ver coordenadas" className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-cyan-300 hover:bg-slate-700"><MapPin className="h-3.5 w-3.5" /></button>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[10px] border ${st.cls}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`}></span> {st.label}
+          </span>
+        </div>
       </div>
 
       <p className="text-[11px] text-slate-400 mb-3 truncate">

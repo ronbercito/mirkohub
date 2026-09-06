@@ -12,6 +12,7 @@ import Navbar from "./Navbar";
 import Dashboard from "../../modules/inicio/Dashboard";
 import Network from "../../modules/red/Network";
 import IPv4Networks from "../../modules/red/IPv4Networks";
+import NapBoxes from "../../modules/red/NapBoxes";
 import Plans from "../../modules/planes/Plans";
 import Clients from "../../modules/clientes/Clients";
 import Billing from "../../modules/facturacion/Billing";
@@ -34,6 +35,8 @@ export default function Layout() {
         return <Network />;
       case "red_ipv4":
         return <IPv4Networks />;
+      case "nap_boxes":
+        return <NapBoxes />;
       case "servicios":
         return <Plans />;
       case "clientes":

@@ -19,6 +19,7 @@ import Monitoring from "../../modules/red/monitoring/Monitoring";
 import Plans from "../../modules/planes/Plans";
 import Users from "../../modules/clientes/usuarios/Users";
 import Zones from "../../modules/clientes/zonas/Zones";
+import ClientMap from "../../modules/clientes/mapa/ClientMap";
 import Billing from "../../modules/facturacion/Billing";
 import Hotspot from "../../modules/hotspot/Hotspot";
 import Tasks from "../../modules/tareas/Tasks";
@@ -89,6 +90,8 @@ export default function Layout() {
         return <Users />;
       case "client_zones":
         return <Zones />;
+      case "client_map":
+        return <ClientMap />;
       case "facturacion":
         return <Billing />;
       case "hotspot":

@@ -7,7 +7,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
-import { Activity, CheckCircle2, CircleOff, MapPin, Plus, Radio, RefreshCw, Trash2, Wifi, X } from "lucide-react";
+import { Activity, CheckCircle2, CircleOff, MapPin, Pencil, Plus, Radio, RefreshCw, Trash2, Wifi, X } from "lucide-react";
 import { toast } from "sonner";
 
 const EMPTY = { name: "", ip_address: "", manufacturer: "MikroTik", equipment_type: "", model_name: "", location: "", details: "" };
@@ -18,6 +18,7 @@ export default function Monitoring() {
   const [rows, setRows] = useState([]);
   const [form, setForm] = useState(EMPTY);
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState("");
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState("");
 
@@ -38,14 +39,34 @@ export default function Monitoring() {
   const save = async (event) => {
     event.preventDefault();
     try {
-      await axios.post(`${API}/monitoring-equipment`, form, { headers });
+      if (editingId) {
+        await axios.put(`${API}/monitoring-equipment/${editingId}`, form, { headers });
+      } else {
+        await axios.post(`${API}/monitoring-equipment`, form, { headers });
+      }
       setForm(EMPTY);
+      setEditingId("");
       setShowForm(false);
-      toast.success("Equipo registrado.");
+      toast.success(editingId ? "Equipo actualizado." : "Equipo registrado.");
       load();
     } catch (error) {
       toast.error(error.response?.data?.detail || "No se pudo registrar el equipo.");
     }
+  };
+
+  const edit = (row) => {
+    setForm({
+      name: row.name || "", ip_address: row.ip_address || "", manufacturer: row.manufacturer || "Otros",
+      equipment_type: row.equipment_type || "", model_name: row.model_name || "", location: row.location || "", details: row.details || "",
+    });
+    setEditingId(row.id);
+    setShowForm(true);
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingId("");
+    setForm(EMPTY);
   };
 
   const pingOne = async (row) => {
@@ -104,7 +125,7 @@ export default function Monitoring() {
           <button onClick={pingAll} disabled={checking === "all"} className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-50">
             <RefreshCw className={`w-4 h-4 ${checking === "all" ? "animate-spin" : ""}`} /> Actualizar estados
           </button>
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 text-xs font-bold text-white hover:bg-cyan-400">
+          <button onClick={() => { setEditingId(""); setForm(EMPTY); setShowForm(true); }} className="flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2 text-xs font-bold text-white hover:bg-cyan-400">
             <Plus className="w-4 h-4" /> Nuevo equipo
           </button>
         </div>
@@ -132,7 +153,7 @@ export default function Monitoring() {
                 <td className="p-3 text-center"><Badge value={row.clients_online || 0} color="bg-emerald-500/15 text-emerald-300" /></td>
                 <td className="p-3 text-center"><Badge value={row.clients_active || 0} color="bg-amber-500/15 text-amber-300" /></td>
                 <td className="p-3 text-center"><Badge value={row.clients_suspended || 0} color="bg-rose-500/15 text-rose-300" /></td>
-                <td className="p-3"><div className="flex justify-end gap-2"><button onClick={() => pingOne(row)} disabled={checking === row.id} title="Hacer ping" className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-1.5 text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50"><Activity className={`w-4 h-4 ${checking === row.id ? "animate-pulse" : ""}`} /></button><button onClick={() => remove(row)} title="Eliminar equipo" className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-rose-400 hover:bg-rose-950/40"><Trash2 className="w-4 h-4" /></button></div></td>
+                <td className="p-3"><div className="flex justify-end gap-2"><button onClick={() => edit(row)} title="Editar equipo" className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-slate-300 hover:bg-slate-700"><Pencil className="w-4 h-4" /></button><button onClick={() => pingOne(row)} disabled={checking === row.id} title="Hacer ping" className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 p-1.5 text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-50"><Activity className={`w-4 h-4 ${checking === row.id ? "animate-pulse" : ""}`} /></button><button onClick={() => remove(row)} title="Eliminar equipo" className="rounded-lg border border-slate-700 bg-slate-800 p-1.5 text-rose-400 hover:bg-rose-950/40"><Trash2 className="w-4 h-4" /></button></div></td>
               </tr>)}
           </tbody>
         </table>
@@ -140,7 +161,7 @@ export default function Monitoring() {
 
       {showForm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
         <div className="w-full max-w-xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-          <div className="mb-5 flex items-center justify-between border-b border-slate-800 pb-3"><h3 className="font-bold text-slate-100">Nuevo equipo de monitoreo</h3><button onClick={() => { setShowForm(false); setForm(EMPTY); }} className="text-slate-400 hover:text-white"><X /></button></div>
+          <div className="mb-5 flex items-center justify-between border-b border-slate-800 pb-3"><h3 className="font-bold text-slate-100">{editingId ? "Editar equipo de monitoreo" : "Nuevo equipo de monitoreo"}</h3><button onClick={closeForm} className="text-slate-400 hover:text-white"><X /></button></div>
           <form onSubmit={save} className="grid grid-cols-1 gap-4 text-xs md:grid-cols-2">
             {field("name", "Nombre del equipo *", "AP Cerro / Torre Norte")}
             {field("ip_address", "Dirección IP", "192.168.x.x")}
@@ -150,7 +171,7 @@ export default function Monitoring() {
             {field("location", "Ubicación", "Zona / torre")}
             <div className="md:col-span-2">{field("details", "Detalles", "Sector, frecuencia u observación…")}</div>
             <p className="md:col-span-2 text-[11px] text-slate-500">El monitoreo usa únicamente ping por IP. No guarda contraseñas ni credenciales.</p>
-            <div className="flex justify-end gap-2 md:col-span-2"><button type="button" onClick={() => setShowForm(false)} className="rounded-xl bg-slate-800 px-4 py-2 text-slate-300">Cancelar</button><button className="rounded-xl bg-cyan-500 px-4 py-2 font-bold text-white">Registrar equipo</button></div>
+            <div className="flex justify-end gap-2 md:col-span-2"><button type="button" onClick={closeForm} className="rounded-xl bg-slate-800 px-4 py-2 text-slate-300">Cancelar</button><button className="rounded-xl bg-cyan-500 px-4 py-2 font-bold text-white">{editingId ? "Guardar cambios" : "Registrar equipo"}</button></div>
           </form>
         </div>
       </div>}

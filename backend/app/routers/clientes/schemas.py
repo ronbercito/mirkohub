@@ -27,6 +27,7 @@ class ClientIn(BaseModel):
     pppoe_password: str = ""
     plan_id: str = ""
     router_id: str = ""
+    ipv4_network_id: str = ""
     nap_box: str = ""
     optical_power_dbm: Optional[float] = None
     status: str = "active"

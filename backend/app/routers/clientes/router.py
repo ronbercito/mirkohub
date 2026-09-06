@@ -24,6 +24,7 @@ from app.integrations.mikrotik import service as mt
 from app.integrations.olt import service as olt
 from app.models.client import Client
 from app.models.invoice import Invoice
+from app.models.nap_box import NapBox
 from app.models.ipv4_network import IPv4Network
 from app.models.plan import Plan
 from app.models.router import Router
@@ -73,6 +74,20 @@ async def _attach_plan_router(db: AsyncSession, c: Client):
                 raise HTTPException(status_code=422, detail=f"La IP debe ser un host válido dentro de {ipv4_network.cidr}.")
     elif c.connection_type in ("IP Estática", "DHCP") and c.ip_address:
         raise HTTPException(status_code=422, detail="Selecciona la red IPv4 correspondiente a la IP del cliente.")
+
+    nap_box = await db.get(NapBox, c.nap_box_id) if c.nap_box_id else None
+    if nap_box:
+        if c.nap_port is not None and not 1 <= c.nap_port <= nap_box.ports:
+            raise HTTPException(status_code=422, detail=f"El puerto NAP debe estar entre 1 y {nap_box.ports}.")
+        if c.nap_port is not None:
+            occupied = await db.scalar(
+                select(Client.id).where(Client.nap_box_id == nap_box.id, Client.nap_port == c.nap_port, Client.id != c.id)
+            )
+            if occupied:
+                raise HTTPException(status_code=422, detail=f"El puerto {c.nap_port} de {nap_box.name} ya está ocupado.")
+        c.nap_box = nap_box.name
+    elif c.nap_port is not None:
+        raise HTTPException(status_code=422, detail="Selecciona una caja NAP antes de indicar el puerto.")
 
     c.plan_name, c.plan_price = plan.name, plan.price
     c.router_name = rtr.name

@@ -36,6 +36,24 @@ const safeText = (value) => String(value || "").replace(/[&<>"']/g, (char) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;",
 }[char]));
 
+
+const equipmentIcon = (maps, type) => {
+  const isOlt = type === "olt";
+  const color = isOlt ? "#8b5cf6" : "#06b6d4";
+  const label = isOlt ? "VSOL" : "CCR";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="58" height="46" viewBox="0 0 58 46">
+    <path d="M29 44c7-8 16-15 16-26a16 16 0 1 0-32 0c0 11 9 18 16 26Z" fill="${color}" stroke="#fff" stroke-width="2"/>
+    <rect x="17" y="11" width="24" height="14" rx="3" fill="#0f172a" stroke="#fff" stroke-width="1.4"/>
+    <path d="M20 15h4m2 0h4m2 0h4M20 20h17" stroke="${color}" stroke-width="1.7" stroke-linecap="round"/>
+    <text x="29" y="34" text-anchor="middle" font-family="Arial,sans-serif" font-size="8" font-weight="700" fill="#fff">${label}</text>
+  </svg>`;
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+    scaledSize: new maps.Size(58, 46),
+    anchor: new maps.Point(29, 44),
+  };
+};
+
 export default function ClientMap() {
   const { API, token } = useAuth();
   const mapRef = useRef(null);
@@ -98,15 +116,7 @@ export default function ClientMap() {
             map,
             position,
             title: `Base · ${base.name || (isOlt ? "OLT" : "MikroTik")}`,
-            label: { text: "B", color: "#ffffff", fontSize: "12px", fontWeight: "700" },
-            icon: {
-              path: maps.SymbolPath.CIRCLE,
-              fillColor: isOlt ? "#8b5cf6" : "#06b6d4",
-              fillOpacity: 1,
-              strokeColor: "#ffffff",
-              strokeWeight: 2,
-              scale: 13,
-            },
+            icon: equipmentIcon(maps, base.device_type),
             zIndex: 10,
           });
           const kind = isOlt ? "OLT" : "MikroTik";
@@ -162,7 +172,7 @@ export default function ClientMap() {
 
       <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
         <span className="flex items-center gap-2"><Users className="h-4 w-4" /> Haz clic en un marcador de cliente para ver su información.</span>
-        <span className="flex items-center gap-2"><Server className="h-4 w-4 text-violet-400" /> Las bases se muestran con el icono circular «B»: celeste para MikroTik y violeta para OLT.</span>
+        <span className="flex items-center gap-2"><Server className="h-4 w-4 text-violet-400" /> Las bases usan un equipo CCR celeste para MikroTik y una OLT VSOL violeta.</span>
       </div>
     </div>
   );

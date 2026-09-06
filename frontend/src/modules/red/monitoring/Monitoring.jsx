@@ -9,8 +9,9 @@ import axios from "axios";
 import { useAuth } from "../../../context/AuthContext";
 import { Activity, CheckCircle2, CircleOff, MapPin, Pencil, Plus, Radio, RefreshCw, Trash2, Wifi, X } from "lucide-react";
 import { toast } from "sonner";
+import CoordinatesPicker from "../components/CoordinatesPicker";
 
-const EMPTY = { name: "", ip_address: "", manufacturer: "MikroTik", equipment_type: "", model_name: "", location: "", details: "" };
+const EMPTY = { name: "", ip_address: "", manufacturer: "MikroTik", equipment_type: "", model_name: "", location: "", latitude: "", longitude: "", details: "" };
 
 export default function Monitoring() {
   const { API, token } = useAuth();
@@ -21,6 +22,7 @@ export default function Monitoring() {
   const [editingId, setEditingId] = useState("");
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState("");
+  const [showCoordinatesPicker, setShowCoordinatesPicker] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -38,11 +40,12 @@ export default function Monitoring() {
 
   const save = async (event) => {
     event.preventDefault();
+    const payload = { ...form, latitude: form.latitude === "" ? 0 : Number(form.latitude), longitude: form.longitude === "" ? 0 : Number(form.longitude) };
     try {
       if (editingId) {
-        await axios.put(`${API}/monitoring-equipment/${editingId}`, form, { headers });
+        await axios.put(`${API}/monitoring-equipment/${editingId}`, payload, { headers });
       } else {
-        await axios.post(`${API}/monitoring-equipment`, form, { headers });
+        await axios.post(`${API}/monitoring-equipment`, payload, { headers });
       }
       setForm(EMPTY);
       setEditingId("");
@@ -57,7 +60,7 @@ export default function Monitoring() {
   const edit = (row) => {
     setForm({
       name: row.name || "", ip_address: row.ip_address || "", manufacturer: row.manufacturer || "Otros",
-      equipment_type: row.equipment_type || "", model_name: row.model_name || "", location: row.location || "", details: row.details || "",
+      equipment_type: row.equipment_type || "", model_name: row.model_name || "", location: row.location || "", latitude: row.latitude ?? "", longitude: row.longitude ?? "", details: row.details || "",
     });
     setEditingId(row.id);
     setShowForm(true);
@@ -169,12 +172,15 @@ export default function Monitoring() {
             {field("equipment_type", "Tipo de equipo", "AP, estación base, router…")}
             {field("model_name", "Modelo / nombre", "RB1100AHx2, Rocket Prism…")}
             {field("location", "Ubicación", "Zona / torre")}
+            <div className="grid grid-cols-2 gap-4 md:col-span-2">{field("latitude", "Latitud", "-8.0679")}{field("longitude", "Longitud", "-78.9859")}</div>
+            <div className="md:col-span-2"><button type="button" onClick={() => setShowCoordinatesPicker(true)} className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-2.5 font-bold text-cyan-300 hover:bg-cyan-500/20"><MapPin className="w-4 h-4" /> Elegir coordenadas en el mapa</button><p className="mt-1 text-[11px] text-slate-500">Arrastra el marcador o pulsa el punto del equipo.</p></div>
             <div className="md:col-span-2">{field("details", "Detalles", "Sector, frecuencia u observación…")}</div>
             <p className="md:col-span-2 text-[11px] text-slate-500">El monitoreo usa únicamente ping por IP. No guarda contraseñas ni credenciales.</p>
             <div className="flex justify-end gap-2 md:col-span-2"><button type="button" onClick={closeForm} className="rounded-xl bg-slate-800 px-4 py-2 text-slate-300">Cancelar</button><button className="rounded-xl bg-cyan-500 px-4 py-2 font-bold text-white">{editingId ? "Guardar cambios" : "Registrar equipo"}</button></div>
           </form>
         </div>
       </div>}
+      {showCoordinatesPicker && <CoordinatesPicker title={`Ubicación · ${form.name || "Equipo de monitoreo"}`} latitude={form.latitude} longitude={form.longitude} onApply={({ lat, lng }) => setForm({ ...form, latitude: lat, longitude: lng })} onClose={() => setShowCoordinatesPicker(false)} />}
     </div>
   );
 }

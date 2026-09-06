@@ -35,11 +35,19 @@ def _valid(raw: str) -> bool:
 
 
 def _onu_id(line: str, pon: int):
+    """Acepta GPON0/1:7, 0/1:7 y también ID local `7` en tablas del PON actual."""
     match = re.search(_INDEX_RE_TEMPLATE.format(pon=int(pon)), line or "", re.IGNORECASE)
-    if not match:
-        return None
-    value = int(match.group(1))
-    return value if 1 <= value <= 128 else None
+    if match:
+        value = int(match.group(1))
+        return value if 1 <= value <= 128 else None
+
+    # Dentro de `interface gpon 0/X`, algunos firmwares imprimen sólo el ONU ID.
+    local = re.match(r"^\s*(\d{1,3})\b", line or "")
+    if local:
+        value = int(local.group(1))
+        return value if 1 <= value <= 128 else None
+
+    return None
 
 
 def _parse_status(raw: str, pon: int):
@@ -53,8 +61,6 @@ def _parse_status(raw: str, pon: int):
             continue
 
         low = original.lower()
-        # Online/offline tienen prioridad sobre palabras como active/inactive,
-        # porque algunos firmwares muestran ambas columnas en la misma fila.
         if re.search(r"\bonline\b|\bregistered\b|\bworking\b", low):
             online.add(onu_id)
             offline.discard(onu_id)
@@ -75,7 +81,8 @@ def _parse_optical_online(raw: str, pon: int):
         onu_id = _onu_id(original, pon)
         if not onu_id:
             continue
-        if re.search(r"-?\d+(?:\.\d+)?\s*(?:dBm)?\b", original, re.IGNORECASE):
+        # Las líneas ópticas válidas suelen contener un valor negativo en dBm.
+        if re.search(r"-\d+(?:\.\d+)?\s*(?:dBm)?\b", original, re.IGNORECASE):
             online.add(onu_id)
     return online
 

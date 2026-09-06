@@ -29,7 +29,8 @@ import Settings from "../../modules/ajustes/Settings";
 
 export default function Layout() {
   const { API, token } = useAuth();
-  const [companyName, setCompanyName] = useState(() => localStorage.getItem("fibraz_company_name") || "FibraZ");
+  const [companyName, setCompanyName] = useState(() => localStorage.getItem("fibraz_company_name") || "MikroHub");
+  const [logoData, setLogoData] = useState(() => localStorage.getItem("fibraz_logo_data") || "");
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem("fibraz_active_tab") || "inicio");
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("fibraz_sidebar_open") !== "false");
 
@@ -40,9 +41,12 @@ export default function Layout() {
     const loadCompanyName = async () => {
       try {
         const response = await axios.get(`${API}/settings`, { headers: { Authorization: `Bearer ${token}` } });
-        const name = response.data.company_name?.trim() || "FibraZ";
+        const name = response.data.company_name?.trim() || "MikroHub";
+        const logo = response.data.logo_data || "";
         setCompanyName(name);
+        setLogoData(logo);
         localStorage.setItem("fibraz_company_name", name);
+        localStorage.setItem("fibraz_logo_data", logo);
       } catch (_) {
         // Se conserva el último nombre conocido si el backend no está disponible.
       }
@@ -52,12 +56,15 @@ export default function Layout() {
 
   useEffect(() => {
     const syncName = (event) => {
-      const name = event.detail?.companyName?.trim() || "FibraZ";
+      const name = event.detail?.companyName?.trim() || "MikroHub";
+      const logo = event.detail?.logoData || "";
       setCompanyName(name);
+      setLogoData(logo);
       localStorage.setItem("fibraz_company_name", name);
+      localStorage.setItem("fibraz_logo_data", logo);
     };
-    window.addEventListener("fibraz-company-name", syncName);
-    return () => window.removeEventListener("fibraz-company-name", syncName);
+    window.addEventListener("fibraz-branding", syncName);
+    return () => window.removeEventListener("fibraz-branding", syncName);
   }, []);
 
   useEffect(() => { document.title = `Panel · ${companyName}`; }, [companyName]);
@@ -109,6 +116,7 @@ export default function Layout() {
         isOpen={sidebarOpen}
         setIsOpen={setSidebarOpen}
         companyName={companyName}
+        logoData={logoData}
       />
       <div className={`flex-1 flex flex-col transition-all duration-300 ${
         sidebarOpen ? "ml-64" : "ml-20"

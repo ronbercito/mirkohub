@@ -1,5 +1,8 @@
 """
 Archivo: backend/server.py
+Área: Backend / montaje de rutas del panel.
+Alcance del cambio: monta el endpoint RX independiente antes de Red.
+No modifica lógica de inventario, estados ni configuración de equipos.
 Función: Punto de entrada del backend FastAPI (uvicorn server:app). Configura CORS,
          monta todas las rutas de los módulos bajo /api, crea las tablas en MariaDB y
          siembra el administrador inicial al arrancar.
@@ -36,6 +39,7 @@ from app.routers.planes.router import router as planes_router
 from app.routers.red.router import router as red_router
 from app.routers.red.olt_onu_summary import router as olt_onu_summary_router
 from app.routers.red.olt_onu_inventory import router as olt_onu_inventory_router
+from app.routers.red.olt_onu_power import router as olt_onu_power_router
 from app.routers.red.olt_onu_v2 import router as olt_onu_v2_router
 from app.routers.red.olt_onu_descriptions import router as olt_onu_descriptions_router
 from app.routers.tareas.router import router as tareas_router
@@ -65,6 +69,7 @@ app.add_middleware(
 api = APIRouter(prefix="/api")
 
 # IMPORTANTE: estas rutas específicas deben ir antes de red_router.
+api.include_router(olt_onu_power_router, prefix="/routers", tags=["Red / OLT / RX"])
 api.include_router(olt_onu_v2_router, prefix="/routers", tags=["Red / OLT / ONUs v2"])
 api.include_router(olt_onu_descriptions_router, prefix="/routers", tags=["Red / OLT / ONUs v2"])
 api.include_router(olt_onu_summary_router, prefix="/routers", tags=["Red / OLT / ONUs"])

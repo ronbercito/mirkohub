@@ -16,7 +16,9 @@ class NapBox(Base):
     __tablename__ = "nap_boxes"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    name: Mapped[str] = mapped_column(String(120), unique=True)
+    # Clave interna única (zona + nombre); display_name es el nombre visible.
+    name: Mapped[str] = mapped_column(String(160), unique=True)
+    display_name: Mapped[str] = mapped_column(String(120), default="")
     location: Mapped[str] = mapped_column(String(255), default="")
     zone_id: Mapped[str] = mapped_column(String(36), default="", index=True)
     zone_name: Mapped[str] = mapped_column(String(120), default="")
